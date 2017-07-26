@@ -143,11 +143,35 @@ public class AcsRequest {
   }
 }
 
+public struct Region {
+  public let id: String
+  public let name: String
+  public init(_ dic: [String: Any] = [:]) {
+    id = dic["RegionId"] as? String ?? ""
+    name = dic["LocalName"] as? String ?? ""
+  }
+}
 
-
-
-
-
+public extension AcsRequest {
+  public static func EcsDescribeRegions(accessKeyId: String, accessKeySecrect: String, completion: @escaping ([Region], String) -> Void ) {
+    let a = AcsRequest(product: "ecs", action: "DescribeRegions", accessKeyId: accessKeyId, accessKeySecret: accessKeySecrect)
+    a.perform { json, msg in
+      if let a = json["Regions"] as? [String: Any],
+        let b = a["Region"] as? [Any] {
+        let c = b.map { i -> Region in
+          if let r = i as? [String: Any] {
+            return Region(r)
+          } else {
+            return Region()
+          }
+        }
+        completion(c, msg)
+      } else {
+        completion([], msg)
+      }
+    }
+  }
+}
 
 
 

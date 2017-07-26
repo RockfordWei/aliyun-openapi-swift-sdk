@@ -25,13 +25,15 @@ class AliyunTests: XCTestCase {
 
   func testRegions() {
     print(AccessKeyId, AccessKeySecret)
-    let a = AcsRequest(product: "ecs", action: "DescribeRegions", accessKeyId: AccessKeyId, accessKeySecret: AccessKeySecret)
-    a.perform { json, msg in
-      XCTAssertGreaterThan(json.count, 0)
-      print(json)
-      XCTAssertTrue(msg.isEmpty)
+    let ex = expectation(description: "testRegions")
+    AcsRequest.EcsDescribeRegions(accessKeyId: AccessKeyId, accessKeySecrect: AccessKeySecret) {
+      regions, msg in
+      XCTAssertGreaterThan(regions.count, 0)
+      print(regions)
+      print(msg)
+      ex.fulfill()
     }
-    sleep(3)
+    wait(for: [ex], timeout: 10)
   }
 
   static var allTests = [
