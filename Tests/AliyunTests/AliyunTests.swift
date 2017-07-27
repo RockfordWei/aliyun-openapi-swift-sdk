@@ -25,17 +25,28 @@ class AliyunTests: XCTestCase {
 
   func testRegions() {
     print(AccessKeyId, AccessKeySecret)
+    ECS.CleanCache()
     let ex = expectation(description: "testRegions")
-    AcsRequest.EcsDescribeRegions(accessKeyId: AccessKeyId, accessKeySecrect: AccessKeySecret) {
-      regions, msg in
-      XCTAssertGreaterThan(regions.count, 0)
-      print(regions)
-      print(msg)
+    let ecs = ECS(accessKeyId: AccessKeyId, accessKeySecret: AccessKeySecret, regionId: "cn-hongkong") { succss, message in
       ex.fulfill()
     }
     wait(for: [ex], timeout: 10)
+    XCTAssertGreaterThan(ecs.regions.count, 0)
+    print(ecs.regions)
+    guard let def = ECS.Default else {
+      XCTFail("ECS.Default failed")
+      return
+    }
+    XCTAssertEqual(def.regions, ecs.regions)
+    XCTAssertEqual(def.regionId, ecs.regionId)
+    XCTAssertEqual(def.accessKeyId, def.accessKeyId)
+    XCTAssertEqual(def.accessKeySecret, def.accessKeySecret)
+    XCTAssertEqual(def.product, def.product)
   }
 
+  override func setUp() {
+    AcsRequest.Debug = true
+  }
   static var allTests = [
     ("testSignature", testSignature),
     ("testToSign", testToSign),

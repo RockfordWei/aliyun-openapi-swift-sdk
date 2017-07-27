@@ -22,6 +22,7 @@ import PerfectLib
 import PerfectCrypto
 import PerfectCURL
 
+
 public extension String {
 
   public var sysEnv: String {
@@ -56,10 +57,7 @@ public extension String {
 public class AcsRequest {
   public var method = "GET"
   public let timeFormatter = DateFormatter()
-  public let product: String
   public var version = "2014-05-26"
-  public let action: String
-  public var regionId = ""
   public var timeStamp = ""
   public let accessKeyId: String
   public let accessKeySecret: String
@@ -69,11 +67,9 @@ public class AcsRequest {
   public let signatureMethod = "HMAC-SHA1"
   public let signatureVersion = "1.0"
   public var parameters:[String: String] = [:]
+  public static var Debug = false
 
-  public init(product: String, action: String, regionId: String = "", accessKeyId: String, accessKeySecret: String) {
-    self.product = product
-    self.action = action
-    self.regionId = regionId
+  public init(accessKeyId: String, accessKeySecret: String) {
     self.accessKeyId = accessKeyId
     self.accessKeySecret = accessKeySecret
     timeFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
@@ -101,13 +97,13 @@ public class AcsRequest {
     return UUID().string
   }
 
-  public var url: String {
+  public func generateURL(product: String, action: String, regionId: String = "") -> String {
     let timestamp = self.timeFormatter.string(from: Date())
     let nonce = AcsRequest.Nonce
     let template = ["SignatureVersion": self.signatureVersion,
                     "SignatureMethod": self.signatureMethod,
                     "SignatureNonce": nonce,
-                    "Action": self.action,
+                    "Action": action,
                     "Format": self.format,
                     "Version": self.version,
                     "AccessKeyId": self.accessKeyId]
@@ -116,7 +112,7 @@ public class AcsRequest {
     p["TimeStamp"] = timestamp
     p["SignatureMethod"] = self.signatureMethod
     if !regionId.isEmpty {
-      p["RegionId"] = self.regionId
+      p["RegionId"] = regionId
     }
     for (k, v) in parameters {
       p[k] = v
@@ -126,14 +122,18 @@ public class AcsRequest {
     var u = template
     u["Signature"] = signature
     u["TimeStamp"] = timestamp.urlEncoded
-    return self.protocol + "://" + self.product + "." + self.domain + "/?"
+    return self.protocol + "://" + product + "." + self.domain + "/?"
       + u.map { $0.key + "=" + $0.value }.joined(separator: "&")
   }
 
-  public func perform(completion: @escaping ([String: Any], String) -> Void) {
-    _ = CURLRequest(self.url).perform { confirmation in
+  public func perform(product: String, action: String, regionId: String = "", completion: @escaping ([String: Any], String) -> Void) {
+    let url = self.generateURL(product: product, action: action, regionId: regionId)
+    _ = CURLRequest(url).perform { confirmation in
       do {
         let resp = try confirmation()
+        if AcsRequest.Debug {
+          print(resp.bodyString)
+        }
         let json: [String: Any] = resp.bodyJSON
         completion(json, "")
       }catch {
@@ -143,37 +143,149 @@ public class AcsRequest {
   }
 }
 
-public struct Region {
-  public let id: String
-  public let name: String
-  public init(_ dic: [String: Any] = [:]) {
-    id = dic["RegionId"] as? String ?? ""
-    name = dic["LocalName"] as? String ?? ""
+public class Region: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+
+  public var id = ""
+  public var name = ""
+  public init() { }
+
+  public static func ==(lhs: Region, rhs: Region) -> Bool {
+    return lhs.id == rhs.id && lhs.name == rhs.name
+  }
+
+  public func setJSONValues(_ values:[String:Any]) {
+    id = values["RegionId"] as? String ?? ""
+    name = values["LocalName"] as? String ?? ""
+  }
+  public func getJSONValues() -> [String:Any] {
+    return ["RegionId": id, "LocalName": name]
+  }
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{Region:: JSON Fault}"
   }
 }
 
-public extension AcsRequest {
-  public static func EcsDescribeRegions(accessKeyId: String, accessKeySecrect: String, completion: @escaping ([Region], String) -> Void ) {
-    let a = AcsRequest(product: "ecs", action: "DescribeRegions", accessKeyId: accessKeyId, accessKeySecret: accessKeySecrect)
-    a.perform { json, msg in
-      if let a = json["Regions"] as? [String: Any],
-        let b = a["Region"] as? [Any] {
-        let c = b.map { i -> Region in
-          if let r = i as? [String: Any] {
-            return Region(r)
-          } else {
-            return Region()
-          }
-        }
-        completion(c, msg)
-      } else {
-        completion([], msg)
+public class ECS: AcsRequest {
+  static let CachePath = "HOME".sysEnv + "/.alicache"
+  static let ProfilePath = "HOME".sysEnv + "/.alicache/profile.json"
+  static let RegionsPath = "HOME".sysEnv + "/.alicache/regions.json"
+  public var regions: [Region] = []
+  public let product = "ecs"
+  public var regionId = ""
+  public enum Exception: Error {
+    case InvalidProfile
+  }
+
+  public static func CleanCache() {
+    _ = unlink(ProfilePath)
+    _ = unlink(RegionsPath)
+    _ = rmdir(CachePath)
+  }
+  
+  public override init(accessKeyId: String, accessKeySecret: String) {
+    super.init(accessKeyId: accessKeyId, accessKeySecret: accessKeySecret)
+  }
+
+  public init(accessKeyId: String, accessKeySecret: String, regionId: String, completion: @escaping (Bool, String) -> Void) {
+    super.init(accessKeyId: accessKeyId, accessKeySecret: accessKeySecret)
+    self.regionId = regionId
+    loadRegionsFromWeb { success in
+      do {
+        try self.save()
+        completion(success, "")
+      }catch {
+        completion(false, error.localizedDescription)
       }
     }
   }
+
+  public static var Default: ECS? {
+    do {
+      let profile = File(ProfilePath)
+      let regionsFile = File(RegionsPath)
+      guard profile.exists && regionsFile.exists else { return nil }
+
+      try profile.open(.read)
+      let json = try profile.readString()
+      profile.close()
+
+      try regionsFile.open(.read)
+      let jReg = try regionsFile.readString()
+      regionsFile.close()
+
+      if let settings = try json.jsonDecode() as? [String: Any],
+        let a = settings["accessKeyId"] as? String,
+        let b = settings["accessKeySecret"] as? String,
+        let c = settings["regionId"] as? String,
+        let d = try jReg.jsonDecode() as? [Any] {
+        let ecs = ECS(accessKeyId: a, accessKeySecret: b)
+        ecs.regionId = c
+        ecs.regions = d.map { item -> Region in
+          let r = Region()
+          if let i = item as? [String: Any] {
+            r.setJSONValues(i)
+          }
+          return r
+        }
+        return ecs
+      } else {
+        return nil
+      }
+    }catch {
+      return nil
+    }
+  }
+  internal func loadRegionsFromWeb(_ completion: @escaping (Bool) -> Void ) {
+    self.perform(product: self.product, action: "DescribeRegions") {
+      json, msg in
+      if let a = json["Regions"] as? [String: Any],
+        let b = a["Region"] as? [Any] {
+        let c = b.map { i -> Region in
+          let r = Region()
+          if let d = i as? [String: Any] {
+            r.setJSONValues(d)
+          }
+          return r
+        }
+        self.regions = c
+        completion(true)
+      } else {
+        completion(false)
+      }//end if
+    }
+  }
+
+  internal func saveRegionsToCache() throws {
+    let f = File(ECS.RegionsPath)
+    try f.open(.write)
+    try f.write(string: self.regions.jsonEncodedString())
+    f.close()
+    chmod(ECS.RegionsPath, 0o600)
+  }
+
+  public func save() throws {
+    let cacheFolder = File(ECS.CachePath)
+    if !cacheFolder.exists {
+      mkdir(ECS.CachePath, 0o700)
+    }//end if
+    guard cacheFolder.isDir else { throw Exception.InvalidProfile }
+    let settings = [
+      "accessKeyId": self.accessKeyId,
+      "accessKeySecret": self.accessKeySecret,
+      "regionId": self.regionId
+    ]
+    let config = try settings.jsonEncodedString()
+    let profile = File(ECS.ProfilePath)
+    try profile.open(.write)
+    try profile.write(string: config)
+    profile.close()
+    chmod(ECS.ProfilePath, 0o600)
+    try self.saveRegionsToCache()
+  }
 }
-
-
 
 
 
