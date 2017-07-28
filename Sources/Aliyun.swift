@@ -279,7 +279,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
   }
 
   public func getJSONValues() -> [String: Any] {
-    return [
+    let template:[String: Any] = [
       "InstanceId": id, "InstanceName": name, "Description": remark, "ImageId": imageId,
       "RegionId": region, "ZoneId": zone, "CPU": cpu, "Memory": memory, "InstanceType": self.type,
       "InstanceTypeFamily": typeFamily, "HostName": host, "SerialNumber": serial,
@@ -293,6 +293,19 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
       "IoOptimized": (ioOptimized ? "True" : "False"),
       "ExpiredTime": expiration, "KeyPairName": keyPairName
     ]
+
+    var ret: [String: Any] = [:]
+    // filter out the empties. dictionary doesn't support filter to another dictionary :-p
+    for (k,v) in template {
+      if v is String {
+        if let x = v as? String, !x.isEmpty {
+          ret[k] = v
+        }
+      } else {
+        ret [k] = v
+      }
+    }
+    return ret
   }
 
 
