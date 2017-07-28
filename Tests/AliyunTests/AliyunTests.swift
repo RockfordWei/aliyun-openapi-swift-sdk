@@ -110,12 +110,25 @@ class AliyunTests: XCTestCase {
     }
   }
 
+  func testInstances() {
+    let ecs = ECS(access: access)
+    Sync().wait { sync in
+      ecs.describeInstances(region: "us-east-1") { instances, msg in
+        XCTAssertFalse(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid"))
+        print(instances)
+        print(msg)
+        sync.done()
+      }
+    }
+  }
+
   static var allTests = [
     ("testSignature", testSignature),
     ("testToSign", testToSign),
     ("testRegions", testRegions),
     ("testKeyPairs", testKeyPairs),
-    ("testInstanceTypes", testInstanceTypes)
+    ("testInstanceTypes", testInstanceTypes),
+    ("testInstances", testInstances)
     ]
 }
 
