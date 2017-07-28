@@ -54,13 +54,62 @@ public extension String {
   }
 }
 
+
+public class Region: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+
+  public var id = ""
+  public var name = ""
+  public init() { }
+
+  public static func ==(lhs: Region, rhs: Region) -> Bool {
+    return lhs.id == rhs.id && lhs.name == rhs.name
+  }
+
+  public func setJSONValues(_ values:[String:Any]) {
+    id = values["RegionId"] as? String ?? ""
+    name = values["LocalName"] as? String ?? ""
+  }
+  public func getJSONValues() -> [String:Any] {
+    return ["RegionId": id, "LocalName": name]
+  }
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{Region:: JSON Fault}"
+  }
+}
+
+public class AcsCredential: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+  public var id = ""
+  public var key = ""
+  public var secret = ""
+  public static func ==(lhs: AcsCredential, rhs: AcsCredential) -> Bool {
+    return lhs.id == rhs.id && lhs.key == rhs.key && lhs.secret == rhs.secret
+  }
+
+  public func setJSONValues(_ values:[String:Any]) {
+    id = values["id"] as? String ?? ""
+    key = values["key"] as? String ?? ""
+    secret = values["secret"] as? String ?? ""
+  }
+  public func getJSONValues() -> [String:Any] {
+    return ["id": id, "key": key, "secret": secret]
+  }
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{Region:: JSON Fault}"
+  }
+}
+
 public class AcsRequest {
   public var method = "GET"
   public let timeFormatter = DateFormatter()
   public var version = "2014-05-26"
   public var timeStamp = ""
-  public let accessKeyId: String
-  public let accessKeySecret: String
+  public let credential: AcsCredential
   public let format = "JSON"
   public var `protocol` = "https"
   public var domain = "aliyuncs.com"
@@ -69,9 +118,8 @@ public class AcsRequest {
   public var parameters:[String: String] = [:]
   public static var Debug = false
 
-  public init(accessKeyId: String, accessKeySecret: String) {
-    self.accessKeyId = accessKeyId
-    self.accessKeySecret = accessKeySecret
+  public init(access: AcsCredential) {
+    self.credential = access
     timeFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
     timeFormatter.timeZone = TimeZone(secondsFromGMT: 0)
   }
@@ -106,7 +154,7 @@ public class AcsRequest {
                     "Action": action,
                     "Format": self.format,
                     "Version": self.version,
-                    "AccessKeyId": self.accessKeyId]
+                    "AccessKeyId": self.credential.key]
 
     var p =  template
     p["TimeStamp"] = timestamp
@@ -118,7 +166,7 @@ public class AcsRequest {
       p[k] = v
     }
     let query = AcsRequest.CanonicalizedQuery(method: self.method, queryParamters: p)
-    let signature = AcsRequest.Sign(query, keySecret: self.accessKeySecret)
+    let signature = AcsRequest.Sign(query, keySecret: self.credential.secret)
     if AcsRequest.Debug {
       print(query)
       print(signature)
@@ -150,102 +198,10 @@ public class AcsRequest {
   }
 }
 
-public class Region: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
-
-  public var id = ""
-  public var name = ""
-  public init() { }
-
-  public static func ==(lhs: Region, rhs: Region) -> Bool {
-    return lhs.id == rhs.id && lhs.name == rhs.name
-  }
-
-  public func setJSONValues(_ values:[String:Any]) {
-    id = values["RegionId"] as? String ?? ""
-    name = values["LocalName"] as? String ?? ""
-  }
-  public func getJSONValues() -> [String:Any] {
-    return ["RegionId": id, "LocalName": name]
-  }
-  public func jsonEncodedString() throws -> String {
-    return try self.getJSONValues().jsonEncodedString()
-  }
-  public var description: String {
-    return (try? self.jsonEncodedString()) ?? "{Region:: JSON Fault}"
-  }
-}
-
 public class ECS: AcsRequest {
-  static let CachePath = "HOME".sysEnv + "/.alicache"
-  static let ProfilePath = "HOME".sysEnv + "/.alicache/profile.json"
-  static let RegionsPath = "HOME".sysEnv + "/.alicache/regions.json"
-  public var regions: [Region] = []
   public let product = "ecs"
-  public var regionId = ""
-  public enum Exception: Error {
-    case InvalidProfile
-  }
 
-  public static func CleanCache() {
-    _ = unlink(ProfilePath)
-    _ = unlink(RegionsPath)
-    _ = rmdir(CachePath)
-  }
-  
-  public override init(accessKeyId: String, accessKeySecret: String) {
-    super.init(accessKeyId: accessKeyId, accessKeySecret: accessKeySecret)
-  }
-
-  public init(accessKeyId: String, accessKeySecret: String, regionId: String, completion: @escaping (Bool, String) -> Void) {
-    super.init(accessKeyId: accessKeyId, accessKeySecret: accessKeySecret)
-    self.regionId = regionId
-    loadRegionsFromWeb { success in
-      do {
-        try self.save()
-        completion(success, "")
-      }catch {
-        completion(false, error.localizedDescription)
-      }
-    }
-  }
-
-  public static var Default: ECS? {
-    do {
-      let profile = File(ProfilePath)
-      let regionsFile = File(RegionsPath)
-      guard profile.exists && regionsFile.exists else { return nil }
-
-      try profile.open(.read)
-      let json = try profile.readString()
-      profile.close()
-
-      try regionsFile.open(.read)
-      let jReg = try regionsFile.readString()
-      regionsFile.close()
-
-      if let settings = try json.jsonDecode() as? [String: Any],
-        let a = settings["accessKeyId"] as? String,
-        let b = settings["accessKeySecret"] as? String,
-        let c = settings["regionId"] as? String,
-        let d = try jReg.jsonDecode() as? [Any] {
-        let ecs = ECS(accessKeyId: a, accessKeySecret: b)
-        ecs.regionId = c
-        ecs.regions = d.map { item -> Region in
-          let r = Region()
-          if let i = item as? [String: Any] {
-            r.setJSONValues(i)
-          }
-          return r
-        }
-        return ecs
-      } else {
-        return nil
-      }
-    }catch {
-      return nil
-    }
-  }
-  internal func loadRegionsFromWeb(_ completion: @escaping (Bool) -> Void ) {
+  public func describeRegions(_ completion: @escaping ([Region]) -> Void ) {
     self.perform(product: self.product, action: "DescribeRegions") {
       json, msg in
       if let a = json["Regions"] as? [String: Any],
@@ -257,40 +213,11 @@ public class ECS: AcsRequest {
           }
           return r
         }
-        self.regions = c
-        completion(true)
+        completion(c)
       } else {
-        completion(false)
+        completion([])
       }//end if
     }
-  }
-
-  internal func saveRegionsToCache() throws {
-    let f = File(ECS.RegionsPath)
-    try f.open(.write)
-    try f.write(string: self.regions.jsonEncodedString())
-    f.close()
-    chmod(ECS.RegionsPath, 0o600)
-  }
-
-  public func save() throws {
-    let cacheFolder = File(ECS.CachePath)
-    if !cacheFolder.exists {
-      mkdir(ECS.CachePath, 0o700)
-    }//end if
-    guard cacheFolder.isDir else { throw Exception.InvalidProfile }
-    let settings = [
-      "accessKeyId": self.accessKeyId,
-      "accessKeySecret": self.accessKeySecret,
-      "regionId": self.regionId
-    ]
-    let config = try settings.jsonEncodedString()
-    let profile = File(ECS.ProfilePath)
-    try profile.open(.write)
-    try profile.write(string: config)
-    profile.close()
-    chmod(ECS.ProfilePath, 0o600)
-    try self.saveRegionsToCache()
   }
 }
 
