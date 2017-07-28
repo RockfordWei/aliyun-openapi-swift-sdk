@@ -99,11 +99,23 @@ class AliyunTests: XCTestCase {
     }
   }
 
+  func testInstanceTypes() {
+    let ecs = ECS(access: access)
+    Sync().wait { sync in
+      ecs.describeImageSupportInstanceTypes(region: "us-east-1", imageId: "ubuntu_16_0402_64_40G_base_20170222.vhd") { types, msg in
+        XCTAssertGreaterThan(types.count, 0)
+        print(types)
+        sync.done()
+      }
+    }
+  }
+
   static var allTests = [
     ("testSignature", testSignature),
     ("testToSign", testToSign),
     ("testRegions", testRegions),
-    ("testKeyPairs", testKeyPairs)
+    ("testKeyPairs", testKeyPairs),
+    ("testInstanceTypes", testInstanceTypes)
     ]
 }
 

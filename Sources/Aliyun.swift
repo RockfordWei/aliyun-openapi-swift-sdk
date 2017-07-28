@@ -174,6 +174,38 @@ public class SecurityGroup: PerfectLib.JSONConvertible, CustomStringConvertible,
 
 }
 
+public class InstanceType: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+  public var id = ""
+  public var cpu = 0
+  public var memory = 0
+  public var typeFamily = ""
+
+  public static func == (lhs: InstanceType, rhs: InstanceType) -> Bool {
+    return lhs.id == rhs.id
+  }
+
+  public func setJSONValues( _ values: [String: Any]) {
+    id = values["InstanceTypeId"] as? String ?? ""
+    cpu = values["CpuCoreCount"] as? Int ?? 0
+    memory = Int(values["MemorySize"] as? Double ?? 0.0)
+    typeFamily = values["InstanceTypeFamily"] as? String ?? ""
+  }
+
+  public func getJSONValues() -> [String: Any] {
+    return ["InstanceTypeId": id, "CpuCoreCount": cpu, "MemorySize": memory,
+            "InstanceTypeFamily": typeFamily]
+  }
+
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{InstanceType:: JSON Fault}"
+  }
+
+}
+
 public class AcsRequest {
   public var method = "GET"
   public let timeFormatter = DateFormatter()
@@ -342,6 +374,23 @@ public class ECS: AcsRequest {
         completion(groups, msg)
       }
     }
+  }
+
+  public func describeImageSupportInstanceTypes(region: String, imageId: String, _ completion: @escaping ([InstanceType], String) -> Void) {
+    self.parameters = ["ImageId": imageId]
+    self.perform(product: self.product, action: "DescribeImageSupportInstanceTypes", regionId: region) {
+      json, msg in
+      if let a = json["InstanceTypes"] as? [String: Any],
+        let b = a["InstanceType"] as? [[String:Any]] {
+        let types = b.map { i -> InstanceType in
+          let j = InstanceType()
+          j.setJSONValues(i)
+          return j
+        }
+        completion(types, msg)
+      }
+    }
+
   }
 }
 
