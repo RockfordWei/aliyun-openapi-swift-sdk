@@ -58,15 +58,31 @@ class AliyunTests: XCTestCase {
         print(regions)
       }
     }
-    Sync().wait { sync in
-      //ecs.timeStamp = "2017-07-28T17:57:06Z"
-      //ecs.nonce = "597b7af2e372a"
-      ecs.createKeyPair(region: "us-east-1", name: "alitestkey") { result in
-        if let r = result {
-          print(r)
-        } else {
-          XCTFail("key 1")
+  }
+
+  func testKeyPairs() {
+    let now = time(nil)
+    let region = "us-east-1"
+    let keys = (["pkey1", "pkey2"]).map { String(format: "\($0)%02x", now) }
+    for k in keys {
+      Sync().wait { sync in
+        let ecs = ECS(access: access)
+        ecs.createKeyPair(region: region, name: k) { keyPair, msg in
+          if let kp = keyPair {
+            XCTAssertEqual(kp.name, k)
+            print(kp)
+          } else {
+            XCTFail(msg)
+          }
+          sync.done()
         }
+      }
+    }
+    let ecs = ECS(access: access)
+    Sync().wait { sync in
+      ecs.deleteKeyPairs(region: region, keyNames: keys) { suc, msg in
+        XCTAssertTrue(suc)
+        XCTAssertTrue(msg.isEmpty)
         sync.done()
       }
     }
@@ -75,7 +91,8 @@ class AliyunTests: XCTestCase {
   static var allTests = [
     ("testSignature", testSignature),
     ("testToSign", testToSign),
-    ("testRegions", testRegions)
+    ("testRegions", testRegions),
+    ("testKeyPairs", testKeyPairs)
     ]
 }
 

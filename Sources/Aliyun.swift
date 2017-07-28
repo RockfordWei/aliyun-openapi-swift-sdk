@@ -93,14 +93,46 @@ public class AcsCredential: PerfectLib.JSONConvertible, CustomStringConvertible,
     key = values["key"] as? String ?? ""
     secret = values["secret"] as? String ?? ""
   }
+
   public func getJSONValues() -> [String:Any] {
     return ["id": id, "key": key, "secret": secret]
   }
+
   public func jsonEncodedString() throws -> String {
     return try self.getJSONValues().jsonEncodedString()
   }
+
   public var description: String {
     return (try? self.jsonEncodedString()) ?? "{Region:: JSON Fault}"
+  }
+}
+
+public class AcsKeyPair: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+
+  public var name = ""
+  public var fingerPrint = ""
+  public var key = ""
+
+  public static func == (lhs: AcsKeyPair, rhs: AcsKeyPair) -> Bool {
+    return lhs.name == rhs.name && lhs.fingerPrint == rhs.fingerPrint && lhs.key == rhs.key
+  }
+
+  public func setJSONValues( _ values: [String: Any] ) {
+    name = values ["KeyPairName"] as? String ?? ""
+    fingerPrint = values ["KeyPairFingerPrint"] as? String ?? ""
+    key = values["PrivateKeyBody"] as? String ?? ""
+  }
+
+  public func getJSONValues() -> [String: Any] {
+    return ["KeyPairName": name, "KeyPairFingerPrint": fingerPrint, "PrivateKeyBody": key]
+  }
+
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{KeyPair:: JSON Fault}"
   }
 }
 
@@ -235,22 +267,26 @@ public class ECS: AcsRequest {
     }
   }
 
-  public func createKeyPair(region: String, name: String, _ completion: @escaping (String?) -> Void ) {
+  public func createKeyPair(region: String, name: String, _ completion: @escaping (AcsKeyPair?, String) -> Void ) {
     self.parameters = ["KeyPairName": name]
     self.perform(product: self.product, action: "CreateKeyPair", regionId: region) {
       json, msg in
-      print(json)
-      completion(msg)
+      if msg.contains("Error") {
+        completion(nil, msg)
+      } else {
+        let k = AcsKeyPair()
+        k.setJSONValues(json)
+        completion(k, "")
+      }
     }
   }
 
-  public func deleteKeyPairs(region: String, keyNames: [String], _ completion: @escaping (Bool) ->  Void) {
+  public func deleteKeyPairs(region: String, keyNames: [String], _ completion: @escaping (Bool, String) ->  Void) {
     let names = keyNames.map { "\"\($0)\""  }.joined(separator: ",")
-    self.parameters = ["KeyPairName": "[\(names)]"]
+    self.parameters = ["KeyPairNames": "[\(names)]"]
     self.perform(product: self.product, action: "DeleteKeyPairs", regionId: region) {
       json, msg in
-      print(json)
-      completion(!msg.isEmpty)
+      completion(!(msg.contains("Error") || msg.contains("Invalid")) , msg)
     }
   }
 }
