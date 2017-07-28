@@ -58,7 +58,18 @@ class AliyunTests: XCTestCase {
         print(regions)
       }
     }
-
+    Sync().wait { sync in
+      //ecs.timeStamp = "2017-07-28T17:57:06Z"
+      //ecs.nonce = "597b7af2e372a"
+      ecs.createKeyPair(region: "us-east-1", name: "alitestkey") { result in
+        if let r = result {
+          print(r)
+        } else {
+          XCTFail("key 1")
+        }
+        sync.done()
+      }
+    }
   }
 
   static var allTests = [
@@ -67,3 +78,10 @@ class AliyunTests: XCTestCase {
     ("testRegions", testRegions)
     ]
 }
+
+
+
+
+
+
+

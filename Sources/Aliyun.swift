@@ -116,12 +116,15 @@ public class AcsRequest {
   public let signatureMethod = "HMAC-SHA1"
   public let signatureVersion = "1.0"
   public var parameters:[String: String] = [:]
+  public var nonce = ""
   public static var Debug = false
 
   public init(access: AcsCredential) {
     self.credential = access
     timeFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
     timeFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+    timeStamp = self.timeFormatter.string(from: Date())
+    nonce = UUID().string
   }
   public static func CanonicalizedQuery(method: String = "GET", queryParamters: [String: String]) -> String {
     let canonicalized = queryParamters.keys.sorted().map { key in
@@ -129,6 +132,9 @@ public class AcsRequest {
       let v = queryParamters[key] ?? ""
       return k + "=" + v.percentEncode
     }.joined(separator: "&")
+    if AcsRequest.Debug {
+      print("base url", canonicalized)
+    }
     return method + "&" + "/".percentEncode + "&" + canonicalized.percentEncode
   }
   public static func Sign(_ stringToSign: String, keySecret: String) -> String {
@@ -141,13 +147,7 @@ public class AcsRequest {
     }
   }
 
-  public static var Nonce: String {
-    return UUID().string
-  }
-
   public func generateURL(product: String, action: String, regionId: String = "") -> String {
-    let timestamp = self.timeFormatter.string(from: Date())
-    let nonce = AcsRequest.Nonce
     let template = ["SignatureVersion": self.signatureVersion,
                     "SignatureMethod": self.signatureMethod,
                     "SignatureNonce": nonce,
@@ -157,29 +157,44 @@ public class AcsRequest {
                     "AccessKeyId": self.credential.key]
 
     var p =  template
-    p["TimeStamp"] = timestamp
+    p["Timestamp"] = self.timeStamp
     p["SignatureMethod"] = self.signatureMethod
     if !regionId.isEmpty {
       p["RegionId"] = regionId
     }
-    for (k, v) in parameters {
+    for (k, v) in self.parameters {
       p[k] = v
     }
     let query = AcsRequest.CanonicalizedQuery(method: self.method, queryParamters: p)
     let signature = AcsRequest.Sign(query, keySecret: self.credential.secret)
     if AcsRequest.Debug {
+      print("to sign:")
       print(query)
+      print("signed:")
       print(signature)
     }
     var u = template
     u["Signature"] = signature.urlEncoded
-    u["TimeStamp"] = timestamp.urlEncoded
+    u["Timestamp"] = timeStamp.urlEncoded
     return self.protocol + "://" + product + "." + self.domain + "/?"
       + u.map { $0.key + "=" + $0.value }.joined(separator: "&")
   }
 
   public func perform(product: String, action: String, regionId: String = "", completion: @escaping ([String: Any], String) -> Void) {
-    let url = self.generateURL(product: product, action: action, regionId: regionId)
+    var url = self.generateURL(product: product, action: action, regionId: regionId) + "&Version=\(self.version)"
+
+    if parameters.count > 0 {
+      url += "&" + parameters.map { key, value -> String in
+        let k = key.urlEncoded
+        let v = value.urlEncoded
+        return "\(k)=\(v)"
+      }.joined(separator: "&")
+    }
+
+    if !regionId.isEmpty {
+      url += "&RegionId=\(regionId)"
+    }
+
     if AcsRequest.Debug {
       print(url)
     }
@@ -217,6 +232,25 @@ public class ECS: AcsRequest {
       } else {
         completion([])
       }//end if
+    }
+  }
+
+  public func createKeyPair(region: String, name: String, _ completion: @escaping (String?) -> Void ) {
+    self.parameters = ["KeyPairName": name]
+    self.perform(product: self.product, action: "CreateKeyPair", regionId: region) {
+      json, msg in
+      print(json)
+      completion(msg)
+    }
+  }
+
+  public func deleteKeyPairs(region: String, keyNames: [String], _ completion: @escaping (Bool) ->  Void) {
+    let names = keyNames.map { "\"\($0)\""  }.joined(separator: ",")
+    self.parameters = ["KeyPairName": "[\(names)]"]
+    self.perform(product: self.product, action: "DeleteKeyPairs", regionId: region) {
+      json, msg in
+      print(json)
+      completion(!msg.isEmpty)
     }
   }
 }
