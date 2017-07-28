@@ -48,6 +48,17 @@ class AliyunTests: XCTestCase {
     XCTAssertEqual(expected, q)
   }
 
+  func testSecurityGroups() {
+    let ecs = ECS(access: access)
+    Sync().wait { sync in
+      ecs.describeSecurityGroups(region: "us-east-1") { securityGroups, message in
+        sync.done()
+        XCTAssertGreaterThan(securityGroups.count, 0)
+        print(securityGroups)
+      }
+    }
+  }
+
   func testRegions() {
 
     let ecs = ECS(access: access)

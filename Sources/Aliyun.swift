@@ -136,6 +136,44 @@ public class AcsKeyPair: PerfectLib.JSONConvertible, CustomStringConvertible, Eq
   }
 }
 
+public class SecurityGroup: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+  public var creationTime = ""
+  public var tags = [String]()
+  public var id = ""
+  public var name = ""
+  public var remark = ""
+  public var availableInstanceAmount = 0
+  public var vpcId = ""
+  public static func == (lhs: SecurityGroup, rhs: SecurityGroup) -> Bool {
+    return lhs.id == rhs.id
+  }
+
+  public func setJSONValues( _ values: [String: Any]) {
+    creationTime = values ["CreationTime"] as? String ?? ""
+    tags = values["Tags"] as? [String] ?? []
+    id = values["SecurityGroupId"] as? String ?? ""
+    name = values["SecurityGroupName"] as? String ?? ""
+    remark = values["Description"] as? String ?? ""
+    availableInstanceAmount = values["AvailableInstanceAmount"] as? Int ?? 0
+    vpcId = values["VpcId"] as? String ?? ""
+  }
+
+  public func getJSONValues() -> [String: Any] {
+    return ["CreationTime": creationTime, "Tags": tags, "SecurityGroupId": id,
+    "SecurityGroupName": name, "Description": remark,
+    "AvailableInstanceAmount": availableInstanceAmount, "VpcId": vpcId]
+  }
+
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{SecurityGroup:: JSON Fault}"
+  }
+
+}
+
 public class AcsRequest {
   public var method = "GET"
   public let timeFormatter = DateFormatter()
@@ -287,6 +325,22 @@ public class ECS: AcsRequest {
     self.perform(product: self.product, action: "DeleteKeyPairs", regionId: region) {
       json, msg in
       completion(!(msg.contains("Error") || msg.contains("Invalid")) , msg)
+    }
+  }
+
+  public func describeSecurityGroups(region: String, _ completion: @escaping ([SecurityGroup], String)->()) {
+    self.parameters = ["PageSize":"50"]
+    self.perform(product: self.product, action: "DescribeSecurityGroups", regionId: region) {
+      json, msg in
+      if let a = json["SecurityGroups"] as? [String: Any],
+      let b = a["SecurityGroup"] as? [[String:Any]] {
+        let groups = b.map { i -> SecurityGroup in
+          let g = SecurityGroup()
+          g.setJSONValues(i)
+          return g
+        }
+        completion(groups, msg)
+      }
     }
   }
 }
