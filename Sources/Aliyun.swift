@@ -119,8 +119,12 @@ public class AcsRequest {
     }
     let query = AcsRequest.CanonicalizedQuery(method: self.method, queryParamters: p)
     let signature = AcsRequest.Sign(query, keySecret: self.accessKeySecret)
+    if AcsRequest.Debug {
+      print(query)
+      print(signature)
+    }
     var u = template
-    u["Signature"] = signature
+    u["Signature"] = signature.urlEncoded
     u["TimeStamp"] = timestamp.urlEncoded
     return self.protocol + "://" + product + "." + self.domain + "/?"
       + u.map { $0.key + "=" + $0.value }.joined(separator: "&")
@@ -128,6 +132,9 @@ public class AcsRequest {
 
   public func perform(product: String, action: String, regionId: String = "", completion: @escaping ([String: Any], String) -> Void) {
     let url = self.generateURL(product: product, action: action, regionId: regionId)
+    if AcsRequest.Debug {
+      print(url)
+    }
     _ = CURLRequest(url).perform { confirmation in
       do {
         let resp = try confirmation()
