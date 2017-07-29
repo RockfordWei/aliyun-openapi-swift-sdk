@@ -515,8 +515,8 @@ public class ECS: AcsRequest {
     for (k, v) in tags {
       counter += 1
       if counter > 5 { break }
-      self.parameters["Tag.\(counter).Key"] = k
-      self.parameters["Tags.\(counter).Value"] = v
+      self.parameters["Tag\(counter)Key"] = k
+      self.parameters["Tag\(counter)Value"] = v
     }
     self.perform(product: self.product, action: "DescribeInstances", regionId:  region) {
       json, msg in
@@ -532,8 +532,52 @@ public class ECS: AcsRequest {
 
     }
   }
-}
 
+  public func createInstance(region: String, imageId: String = "ubuntu_16_0402_64_40G_base_20170222.vhd", securityGroupId: String, instanceType: String = "ecs.n1.tiny", name: String, description: String, chargeTypeInternet: ChargeTypeInternet = .PayByTraffic, chargeTypeInstance: ChargeTypeInstance = .PostPaid, maxBandwidthIn: Int = 1, maxBandwidthOut: Int = 1, keyPair: String, tags: [String: String], completion: @escaping (String?, String) -> Void) {
+
+    self.parameters = [
+      "ImageId": imageId, "SecurityGroupId": securityGroupId,
+      "InstanceType": instanceType,
+      "InstanceName": name,
+      "Description": description,
+      "InternetChargeType": chargeTypeInternet.rawValue,
+      "InstanceChargeType": chargeTypeInstance.rawValue,
+      "InternetMaxBandwidthIn": "\(maxBandwidthIn)",
+      "InternetMaxBandwidthOut": "\(maxBandwidthOut)",
+      "KeyPairName": keyPair
+    ]
+    var counter = 0
+    for (k, v) in tags {
+    counter += 1
+    if counter > 5 { break }
+      self.parameters["Tag.\(counter).Key"] = k
+      self.parameters["Tag.\(counter).Value"] = v
+    }
+    self.perform(product: self.product, action: "CreateInstance", regionId: region) { json, msg in
+      print(" ------- Return Message --------")
+      print(msg)
+      if let id = json["InstanceId"] as? String {
+        completion(id, msg)
+      } else {
+        completion(nil, msg)
+      }
+    }
+  }
+
+  public func stopInstance(instanceId: String, completion: @escaping (Bool, String) -> Void) {
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "StopInstance") { _, msg in
+      completion( !(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid")), msg)
+    }
+  }
+
+  public func deleteInstance(instanceId: String, completion: @escaping (Bool, String) -> Void ) {
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "DeleteInstance") { _, msg in
+      completion( !(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid")), msg)
+    }
+  }
+}
 
 
 

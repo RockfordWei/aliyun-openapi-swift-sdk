@@ -24,7 +24,7 @@ class AliyunTests: XCTestCase {
 
 
   override func setUp() {
-    AcsRequest.Debug = true
+    // AcsRequest.Debug = true
     access.id = "default"
     access.key = "ACSKEY".sysEnv
     access.secret = "ACSPWD".sysEnv
@@ -112,12 +112,39 @@ class AliyunTests: XCTestCase {
 
   func testInstances() {
     let ecs = ECS(access: access)
+    var objectiveInstanceId: String? = nil
+    let region = "cn-hongkong"
     Sync().wait { sync in
-      ecs.describeInstances(region: "us-east-1") { instances, msg in
+      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", tags: ["Perfect":"1"]) {
+        instanceId, msg in
+        objectiveInstanceId = instanceId
+        print("--------------- INSTANCE CREATION ----------------")
+        if let id = instanceId {
+          print(id)
+        } else {
+          XCTFail(msg)
+        }
+        sync.done()
+      }
+    }
+    Sync().wait { sync in
+      ecs.describeInstances(region: region) { instances, msg in
         XCTAssertFalse(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid"))
         print(instances)
         print(msg)
+        let lookup = instances.filter { $0.id == objectiveInstanceId }
+        if let _ = objectiveInstanceId {
+          XCTAssertGreaterThan(lookup.count, 0)
+        }
         sync.done()
+      }
+    }
+    if let id = objectiveInstanceId {
+      Sync().wait { sync in
+        ecs.deleteInstance(instanceId: id) { suc, msg in
+          XCTAssertTrue(suc)
+          print(msg)
+        }
       }
     }
   }
