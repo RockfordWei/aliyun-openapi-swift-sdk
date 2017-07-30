@@ -19,6 +19,8 @@ public class Sync {
 }
 
 let access = AcsCredential()
+let passwd = "PASSWD".sysEnv
+let REGION = "cn-hongkong"
 
 class AliyunTests: XCTestCase {
 
@@ -51,7 +53,7 @@ class AliyunTests: XCTestCase {
   func testSecurityGroups() {
     let ecs = ECS(access: access)
     Sync().wait { sync in
-      ecs.describeSecurityGroups(region: "us-east-1") { securityGroups, message in
+      ecs.describeSecurityGroups(region: REGION) { securityGroups, message in
         sync.done()
         XCTAssertGreaterThan(securityGroups.count, 0)
         print(securityGroups)
@@ -73,12 +75,11 @@ class AliyunTests: XCTestCase {
 
   func testKeyPairs() {
     let now = time(nil)
-    let region = "us-east-1"
     let keys = (["pkey1", "pkey2"]).map { String(format: "\($0)%02x", now) }
     for k in keys {
       Sync().wait { sync in
         let ecs = ECS(access: access)
-        ecs.createKeyPair(region: region, name: k) { keyPair, msg in
+        ecs.createKeyPair(region: REGION, name: k) { keyPair, msg in
           if let kp = keyPair {
             XCTAssertEqual(kp.name, k)
             print(kp)
@@ -91,7 +92,7 @@ class AliyunTests: XCTestCase {
     }
     let ecs = ECS(access: access)
     Sync().wait { sync in
-      ecs.deleteKeyPairs(region: region, keyNames: keys) { suc, msg in
+      ecs.deleteKeyPairs(region: REGION, keyNames: keys) { suc, msg in
         XCTAssertTrue(suc)
         XCTAssertTrue(msg.isEmpty)
         sync.done()
@@ -102,7 +103,7 @@ class AliyunTests: XCTestCase {
   func testInstanceTypes() {
     let ecs = ECS(access: access)
     Sync().wait { sync in
-      ecs.describeImageSupportInstanceTypes(region: "us-east-1", imageId: "ubuntu_16_0402_64_40G_base_20170222.vhd") { types, msg in
+      ecs.describeImageSupportInstanceTypes(region: REGION, imageId: "ubuntu_16_0402_64_40G_base_20170222.vhd") { types, msg in
         XCTAssertGreaterThan(types.count, 0)
         print(types)
         sync.done()
@@ -113,10 +114,10 @@ class AliyunTests: XCTestCase {
   func testInstances() {
     let ecs = ECS(access: access)
     var objectiveInstanceId: String? = nil
-    let region = "cn-hongkong"
+    let region = REGION
     let tags = ["Perfect":"1"]
     Sync().wait { sync in
-      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", tags: tags) {
+      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", password: passwd, tags: tags) {
         instanceId, msg in
         objectiveInstanceId = instanceId
         print("--------------- INSTANCE CREATION ----------------")
