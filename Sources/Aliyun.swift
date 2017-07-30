@@ -22,6 +22,24 @@ import PerfectLib
 import PerfectCrypto
 import PerfectCURL
 
+public extension Dictionary {
+  public mutating func excludingNullStrings() -> Dictionary {
+    for index in self.indices {
+      let v = self[index]
+      if v.value is String, let s = v.value as? String, s.isEmpty {
+        self.remove(at: index)
+      }
+    }
+    return self
+  }
+}
+
+public extension Array {
+  public var aliJSON : String {
+    let joined = self.map { "\"\($0)\""  }.joined(separator: ",")
+    return "[\(joined)]"
+  }
+}
 
 public extension String {
 
@@ -53,7 +71,6 @@ public extension String {
       .replacingOccurrences(of: "%7E", with: "~")
   }
 }
-
 
 public class Region: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
 
@@ -159,9 +176,11 @@ public class SecurityGroup: PerfectLib.JSONConvertible, CustomStringConvertible,
   }
 
   public func getJSONValues() -> [String: Any] {
-    return ["CreationTime": creationTime, "Tags": tags, "SecurityGroupId": id,
-    "SecurityGroupName": name, "Description": remark,
-    "AvailableInstanceAmount": availableInstanceAmount, "VpcId": vpcId]
+    var template:[String: Any] =
+      ["CreationTime": creationTime, "Tags": tags, "SecurityGroupId": id,
+       "SecurityGroupName": name, "Description": remark,
+       "AvailableInstanceAmount": availableInstanceAmount, "VpcId": vpcId]
+    return template.excludingNullStrings()
   }
 
   public func jsonEncodedString() throws -> String {
@@ -192,8 +211,10 @@ public class InstanceType: PerfectLib.JSONConvertible, CustomStringConvertible, 
   }
 
   public func getJSONValues() -> [String: Any] {
-    return ["InstanceTypeId": id, "CpuCoreCount": cpu, "MemorySize": memory,
-            "InstanceTypeFamily": typeFamily]
+    var temp:[String: Any] =
+      ["InstanceTypeId": id, "CpuCoreCount": cpu,
+       "MemorySize": memory, "InstanceTypeFamily": typeFamily]
+    return temp.excludingNullStrings()
   }
 
   public func jsonEncodedString() throws -> String {
@@ -279,7 +300,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
   }
 
   public func getJSONValues() -> [String: Any] {
-    let template:[String: Any] = [
+    var template:[String: Any] = [
       "InstanceId": id, "InstanceName": name, "Description": remark, "ImageId": imageId,
       "RegionId": region, "ZoneId": zone, "CPU": cpu, "Memory": memory, "InstanceType": self.type,
       "InstanceTypeFamily": typeFamily, "HostName": host, "SerialNumber": serial,
@@ -294,18 +315,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
       "ExpiredTime": expiration, "KeyPairName": keyPairName
     ]
 
-    var ret: [String: Any] = [:]
-    // filter out the empties. dictionary doesn't support filter to another dictionary :-p
-    for (k,v) in template {
-      if v is String {
-        if let x = v as? String, !x.isEmpty {
-          ret[k] = v
-        }
-      } else {
-        ret [k] = v
-      }
-    }
-    return ret
+    return template.excludingNullStrings()
   }
 
 
@@ -332,7 +342,7 @@ public class AcsRequest {
   public let signatureVersion = "1.0"
   public var parameters:[String: String] = [:]
   public var nonce = ""
-  public static var Debug = false
+  public var debug = false
 
   public init(access: AcsCredential) {
     self.credential = access
@@ -347,9 +357,6 @@ public class AcsRequest {
       let v = queryParamters[key] ?? ""
       return k + "=" + v.percentEncode
     }.joined(separator: "&")
-    if AcsRequest.Debug {
-      print("base url", canonicalized)
-    }
     return method + "&" + "/".percentEncode + "&" + canonicalized.percentEncode
   }
   public static func Sign(_ stringToSign: String, keySecret: String) -> String {
@@ -382,7 +389,7 @@ public class AcsRequest {
     }
     let query = AcsRequest.CanonicalizedQuery(method: self.method, queryParamters: p)
     let signature = AcsRequest.Sign(query, keySecret: self.credential.secret)
-    if AcsRequest.Debug {
+    if self.debug {
       print("to sign:")
       print(query)
       print("signed:")
@@ -410,13 +417,13 @@ public class AcsRequest {
       url += "&RegionId=\(regionId)"
     }
 
-    if AcsRequest.Debug {
+    if self.debug {
       print(url)
     }
     _ = CURLRequest(url).perform { confirmation in
       do {
         let resp = try confirmation()
-        if AcsRequest.Debug {
+        if self.debug {
           print(resp.bodyString)
         }
         let json: [String: Any] = resp.bodyJSON
@@ -466,7 +473,7 @@ public class ECS: AcsRequest {
 
   public func deleteKeyPairs(region: String, keyNames: [String], _ completion: @escaping (Bool, String) ->  Void) {
     let names = keyNames.map { "\"\($0)\""  }.joined(separator: ",")
-    self.parameters = ["KeyPairNames": "[\(names)]"]
+    self.parameters = ["KeyPairNames": keyNames.aliJSON]
     self.perform(product: self.product, action: "DeleteKeyPairs", regionId: region) {
       json, msg in
       completion(!(msg.contains("Error") || msg.contains("Invalid")) , msg)
@@ -506,11 +513,36 @@ public class ECS: AcsRequest {
 
   }
 
-  public func describeInstances(region: String, instanceIds: [String] = [], tags: [String: String] = [:], _ completion: @escaping ([Instance], String) -> Void ) {
-    if instanceIds.count > 0 {
-      let ids = instanceIds.map { "\"\($0)\"" }.joined(separator: ",")
-      self.parameters = ["InstanceIds": "[\(ids)]"]
+  private func lookupInstancesBy(region: String, pageNumber: Int = 0, instances:[Instance] = [], messages: [String] = [], completion: @escaping ([Instance], [String]) -> Void ) {
+
+    self.parameters["PageNumber"] = "\(pageNumber)"
+    self.perform(product: self.product, action: "DescribeInstances", regionId:  region) {
+      json, msg in
+      if let a = json["Instances"] as? [String: Any],
+        let b = a["Instance"] as? [[String:Any]],
+      let totalCount = json ["TotalCount"] as? Int,
+      let pgSize = json["PageSize"] as? Int,
+      let pgNum = json["PageNumber"] as? Int {
+        let next  = totalCount > pgNum * pgSize ? pgNum + 1 : 0
+        let newLoadedInstances = b.map { i -> Instance in
+          let j = Instance()
+          j.setJSONValues(i)
+          return j
+        }
+        var inst = instances
+        var msgs = messages
+        inst.append(contentsOf: newLoadedInstances)
+        msgs.append(msg)
+        if next > 0 {
+          self.lookupInstancesBy(region: region, pageNumber: next, instances: inst, messages: msgs, completion: completion)
+        } else {
+          completion(inst, msgs)
+        }
+      }
     }
+  }
+
+  public func loadInstances(region: String, tags: [String: String] = [:], completion: @escaping ([Instance], [String]) -> Void) {
     var counter = 0
     for (k, v) in tags {
       counter += 1
@@ -518,22 +550,13 @@ public class ECS: AcsRequest {
       self.parameters["Tag\(counter)Key"] = k
       self.parameters["Tag\(counter)Value"] = v
     }
-    self.perform(product: self.product, action: "DescribeInstances", regionId:  region) {
-      json, msg in
-      if let a = json["Instances"] as? [String: Any],
-        let b = a["Instance"] as? [[String:Any]] {
-        let instances = b.map { i -> Instance in
-          let j = Instance()
-          j.setJSONValues(i)
-          return j
-        }
-        completion(instances, msg)
-      }
+    self.parameters["PageNumber"] = "1"
+    self.parameters["PageSize"] = "100"
 
-    }
+    self.lookupInstancesBy(region: region, pageNumber: 1, completion: completion)
   }
 
-  public func createInstance(region: String, imageId: String = "ubuntu_16_0402_64_40G_base_20170222.vhd", securityGroupId: String, instanceType: String = "ecs.n1.tiny", name: String, description: String, chargeTypeInternet: ChargeTypeInternet = .PayByTraffic, chargeTypeInstance: ChargeTypeInstance = .PostPaid, maxBandwidthIn: Int = 1, maxBandwidthOut: Int = 1, keyPair: String, tags: [String: String], completion: @escaping (String?, String) -> Void) {
+  public func createInstance(region: String, imageId: String = "ubuntu_16_0402_64_40G_base_20170222.vhd", securityGroupId: String, instanceType: String = "ecs.n1.tiny", name: String, description: String, chargeTypeInternet: ChargeTypeInternet = .PayByTraffic, chargeTypeInstance: ChargeTypeInstance = .PostPaid, maxBandwidthIn: Int = 1, maxBandwidthOut: Int = 1, keyPair: String, password: String, tags: [String: String], completion: @escaping (String?, String) -> Void) {
 
     self.parameters = [
       "ImageId": imageId, "SecurityGroupId": securityGroupId,
@@ -544,7 +567,8 @@ public class ECS: AcsRequest {
       "InstanceChargeType": chargeTypeInstance.rawValue,
       "InternetMaxBandwidthIn": "\(maxBandwidthIn)",
       "InternetMaxBandwidthOut": "\(maxBandwidthOut)",
-      "KeyPairName": keyPair
+      "KeyPairName": keyPair,
+      "Password": password
     ]
     var counter = 0
     for (k, v) in tags {
@@ -564,6 +588,13 @@ public class ECS: AcsRequest {
     }
   }
 
+  public func startInstance(instanceId: String, completion: @escaping (Bool, String) -> Void) {
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "StartInstance") { _, msg in
+      completion( !(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid")), msg)
+    }
+  }
+
   public func stopInstance(instanceId: String, completion: @escaping (Bool, String) -> Void) {
     self.parameters = ["InstanceId": instanceId]
     self.perform(product: self.product, action: "StopInstance") { _, msg in
@@ -575,6 +606,17 @@ public class ECS: AcsRequest {
     self.parameters = ["InstanceId": instanceId]
     self.perform(product: self.product, action: "DeleteInstance") { _, msg in
       completion( !(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid")), msg)
+    }
+  }
+
+  public func allocateIP(instanceId: String, completion: @escaping (String?, String) -> Void) {
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "AllocatePublicIpAddress") { json, msg in
+      if let ip = json["IpAddress"] as? String {
+        completion(ip, "")
+      } else {
+        completion(nil, msg)
+      }
     }
   }
 }

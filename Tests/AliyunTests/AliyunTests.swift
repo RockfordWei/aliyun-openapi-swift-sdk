@@ -114,8 +114,9 @@ class AliyunTests: XCTestCase {
     let ecs = ECS(access: access)
     var objectiveInstanceId: String? = nil
     let region = "cn-hongkong"
+    let tags = ["Perfect":"1"]
     Sync().wait { sync in
-      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", tags: ["Perfect":"1"]) {
+      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", tags: tags) {
         instanceId, msg in
         objectiveInstanceId = instanceId
         print("--------------- INSTANCE CREATION ----------------")
@@ -127,23 +128,21 @@ class AliyunTests: XCTestCase {
         sync.done()
       }
     }
+    sleep(5)
     Sync().wait { sync in
-      ecs.describeInstances(region: region) { instances, msg in
-        XCTAssertFalse(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid"))
-        print(instances)
-        print(msg)
-        let lookup = instances.filter { $0.id == objectiveInstanceId }
-        if let _ = objectiveInstanceId {
-          XCTAssertGreaterThan(lookup.count, 0)
-        }
+      ecs.loadInstances(region: region, tags: tags) { insts, msgs in
+        print("############ INSTANCE STATUS ###################")
+        XCTAssertGreaterThan(insts.count, 0)
+        print(insts)
         sync.done()
       }
     }
-    if let id = objectiveInstanceId {
+    if let id = objectiveInstanceId{
       Sync().wait { sync in
-        ecs.deleteInstance(instanceId: id) { suc, msg in
-          XCTAssertTrue(suc)
-          print(msg)
+        ecs.startInstance(instanceId: id) { success, message in
+          XCTAssertTrue(success)
+          print(message)
+          sync.done()
         }
       }
     }
