@@ -32,6 +32,55 @@ class AliyunTests: XCTestCase {
     access.secret = "ACSPWD".sysEnv
   }
 
+  func testInstances() {
+    let ecs = ECS(access: access)
+    var objectiveInstanceId: String? = nil
+    let region = REGION
+    let tags = ["Perfect":"1"]
+    Sync().wait { sync in
+      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", tags: tags) {
+        instanceId, msg in
+        objectiveInstanceId = instanceId
+        print("--------------- INSTANCE CREATION ----------------")
+        if let id = instanceId {
+          print(id)
+        } else {
+          XCTFail(msg)
+        }
+        sync.done()
+      }
+    }
+    sleep(5)
+    Sync().wait { sync in
+      ecs.loadInstances(region: region, tags: tags) { insts, msgs in
+        print("############ INSTANCE STATUS ###################")
+        XCTAssertGreaterThan(insts.count, 0)
+        print(insts)
+        sync.done()
+      }
+    }
+    if let id = objectiveInstanceId{
+      Sync().wait { sync in
+        ecs.allocateIP(instanceId: id) { ipAddress, msg in
+          sync.done()
+          guard let ip = ipAddress else {
+            XCTFail(msg)
+            return
+          }
+          print("+++++++++++++++++ IP ADDRESS +++++++++++++++")
+          print("ssh -i ~/.ssh/TestKey.pem root@\(ip)")
+        }
+      }
+      Sync().wait { sync in
+        ecs.startInstance(instanceId: id) { success, message in
+          XCTAssertTrue(success)
+          print(message)
+          sync.done()
+        }
+      }
+    }
+  }
+
   func testSignature() {
     let toSign = "GET&%2F&AccessKeyId%3Dtestid%26Action%3DDescribeRegions%26Format%3DXML%26SignatureMethod%3DHMAC-SHA1%26SignatureNonce%3D3ee8c1b8-83d3-44af-a94f-4e0ad82fd6cf%26SignatureVersion%3D1.0%26TimeStamp%3D2016-02-23T12%253A46%253A24Z%26Version%3D2014-05-26"
     let signed = AcsRequest.Sign(toSign, keySecret: "testsecret")
@@ -111,51 +160,13 @@ class AliyunTests: XCTestCase {
     }
   }
 
-  func testInstances() {
-    let ecs = ECS(access: access)
-    var objectiveInstanceId: String? = nil
-    let region = REGION
-    let tags = ["Perfect":"1"]
-    Sync().wait { sync in
-      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", password: passwd, tags: tags) {
-        instanceId, msg in
-        objectiveInstanceId = instanceId
-        print("--------------- INSTANCE CREATION ----------------")
-        if let id = instanceId {
-          print(id)
-        } else {
-          XCTFail(msg)
-        }
-        sync.done()
-      }
-    }
-    sleep(5)
-    Sync().wait { sync in
-      ecs.loadInstances(region: region, tags: tags) { insts, msgs in
-        print("############ INSTANCE STATUS ###################")
-        XCTAssertGreaterThan(insts.count, 0)
-        print(insts)
-        sync.done()
-      }
-    }
-    if let id = objectiveInstanceId{
-      Sync().wait { sync in
-        ecs.startInstance(instanceId: id) { success, message in
-          XCTAssertTrue(success)
-          print(message)
-          sync.done()
-        }
-      }
-    }
-  }
-
   static var allTests = [
+    ("testInstances", testInstances),
     ("testSignature", testSignature),
     ("testToSign", testToSign),
     ("testRegions", testRegions),
     ("testKeyPairs", testKeyPairs),
-    ("testInstanceTypes", testInstanceTypes),
-    ("testInstances", testInstances)
+    ("testInstanceTypes", testInstanceTypes)
     ]
 }
 

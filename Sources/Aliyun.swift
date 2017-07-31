@@ -472,7 +472,6 @@ public class ECS: AcsRequest {
   }
 
   public func deleteKeyPairs(region: String, keyNames: [String], _ completion: @escaping (Bool, String) ->  Void) {
-    let names = keyNames.map { "\"\($0)\""  }.joined(separator: ",")
     self.parameters = ["KeyPairNames": keyNames.aliJSON]
     self.perform(product: self.product, action: "DeleteKeyPairs", regionId: region) {
       json, msg in
@@ -556,7 +555,7 @@ public class ECS: AcsRequest {
     self.lookupInstancesBy(region: region, pageNumber: 1, completion: completion)
   }
 
-  public func createInstance(region: String, imageId: String = "ubuntu_16_0402_64_40G_base_20170222.vhd", securityGroupId: String, instanceType: String = "ecs.n1.tiny", name: String, description: String, chargeTypeInternet: ChargeTypeInternet = .PayByTraffic, chargeTypeInstance: ChargeTypeInstance = .PostPaid, maxBandwidthIn: Int = 1, maxBandwidthOut: Int = 1, keyPair: String, password: String, tags: [String: String], completion: @escaping (String?, String) -> Void) {
+  public func createInstance(region: String, imageId: String = "ubuntu_16_0402_64_40G_base_20170222.vhd", securityGroupId: String, instanceType: String = "ecs.n1.tiny", name: String, description: String, chargeTypeInternet: ChargeTypeInternet = .PayByTraffic, chargeTypeInstance: ChargeTypeInstance = .PostPaid, maxBandwidthIn: Int = 1, maxBandwidthOut: Int = 1, keyPair: String, password: String? = nil, tags: [String: String], completion: @escaping (String?, String) -> Void) {
 
     self.parameters = [
       "ImageId": imageId, "SecurityGroupId": securityGroupId,
@@ -567,9 +566,11 @@ public class ECS: AcsRequest {
       "InstanceChargeType": chargeTypeInstance.rawValue,
       "InternetMaxBandwidthIn": "\(maxBandwidthIn)",
       "InternetMaxBandwidthOut": "\(maxBandwidthOut)",
-      "KeyPairName": keyPair,
-      "Password": password
+      "KeyPairName": keyPair
     ]
+    if let pwd = password {
+      self.parameters["Password"] = pwd
+    }
     var counter = 0
     for (k, v) in tags {
     counter += 1
