@@ -165,3 +165,7 @@ ecs.startInstance(instanceId: id) {
 	// success will be true if the instance started.
 }
 ```
+
+# Extend To all Aliyun OpenAPI
+
+Check source code `AcsRequest` and you can easily extend this class to all Alibaba cloud REST API
