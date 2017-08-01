@@ -101,6 +101,7 @@ public class AcsCredential: PerfectLib.JSONConvertible, CustomStringConvertible,
   public var id = ""
   public var key = ""
   public var secret = ""
+  public init() { }
   public static func ==(lhs: AcsCredential, rhs: AcsCredential) -> Bool {
     return lhs.id == rhs.id && lhs.key == rhs.key && lhs.secret == rhs.secret
   }
@@ -129,6 +130,7 @@ public class AcsKeyPair: PerfectLib.JSONConvertible, CustomStringConvertible, Eq
   public var name = ""
   public var fingerPrint = ""
   public var key = ""
+  public init() { }
 
   public static func == (lhs: AcsKeyPair, rhs: AcsKeyPair) -> Bool {
     return lhs.name == rhs.name && lhs.fingerPrint == rhs.fingerPrint && lhs.key == rhs.key
@@ -161,6 +163,7 @@ public class SecurityGroup: PerfectLib.JSONConvertible, CustomStringConvertible,
   public var remark = ""
   public var availableInstanceAmount = 0
   public var vpcId = ""
+  public init() { }
   public static func == (lhs: SecurityGroup, rhs: SecurityGroup) -> Bool {
     return lhs.id == rhs.id
   }
@@ -198,6 +201,7 @@ public class InstanceType: PerfectLib.JSONConvertible, CustomStringConvertible, 
   public var cpu = 0
   public var memory = 0
   public var typeFamily = ""
+  public init() { }
 
   public static func == (lhs: InstanceType, rhs: InstanceType) -> Bool {
     return lhs.id == rhs.id
@@ -264,6 +268,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
   public var ioOptimized = false
   public var expiration = ""
   public var keyPairName = ""
+  public init() { }
 
   static public func == (l:Instance, r: Instance) -> Bool {
     return l.id == r.id
