@@ -27,7 +27,6 @@ class AliyunTests: XCTestCase {
 
   override func setUp() {
     // AcsRequest.Debug = true
-    access.id = "default"
     access.key = "ACSKEY".sysEnv
     access.secret = "ACSPWD".sysEnv
   }

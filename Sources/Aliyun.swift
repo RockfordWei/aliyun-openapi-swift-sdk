@@ -72,6 +72,31 @@ public extension String {
   }
 }
 
+public class IpAddressSetType: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+  public var ipAddress: [String] = []
+
+  public init() {}
+
+  public static func == (lhs: IpAddressSetType, rhs: IpAddressSetType) -> Bool {
+    return lhs === rhs
+  }
+
+  public func setJSONValues(_ values: [String: Any]) {
+    ipAddress = values["IpAddress"] as? [String] ?? []
+  }
+
+  public func getJSONValues() -> [String: Any] {
+    return ["IpAddress": ipAddress]
+  }
+
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{IpAddress:: JSON Fault}"
+  }
+}
+
 public class Region: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
 
   public var id = ""
@@ -98,22 +123,20 @@ public class Region: PerfectLib.JSONConvertible, CustomStringConvertible, Equata
 }
 
 public class AcsCredential: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
-  public var id = ""
   public var key = ""
   public var secret = ""
   public init() { }
   public static func ==(lhs: AcsCredential, rhs: AcsCredential) -> Bool {
-    return lhs.id == rhs.id && lhs.key == rhs.key && lhs.secret == rhs.secret
+    return lhs === rhs
   }
 
   public func setJSONValues(_ values:[String:Any]) {
-    id = values["id"] as? String ?? ""
     key = values["key"] as? String ?? ""
     secret = values["secret"] as? String ?? ""
   }
 
   public func getJSONValues() -> [String:Any] {
-    return ["id": id, "key": key, "secret": secret]
+    return ["key": key, "secret": secret]
   }
 
   public func jsonEncodedString() throws -> String {
@@ -240,6 +263,41 @@ public enum ChargeTypeInstance: String {
   case PostPaid = "PostPaid"
 }
 
+public class VpcAttributesType: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
+  public var vpcId = ""
+  public var vSwitchId = ""
+  public var privateIpAddress = IpAddressSetType()
+  public var natIpAddress = ""
+
+  public init() {}
+
+  static public func == (lhs:VpcAttributesType, rhs: VpcAttributesType) -> Bool {
+    return lhs === rhs
+  }
+
+  public func setJSONValues(_ values: [String: Any]) {
+    vpcId = values["VpcId"] as? String ?? ""
+    vSwitchId = values["VSwitchId"] as? String ?? ""
+    privateIpAddress.setJSONValues(values["PrivateIpAddress"] as? [String: Any] ?? [:])
+    natIpAddress = values["NatIpAddress"] as? String ?? ""
+  }
+
+  public func getJSONValues() -> [String: Any] {
+    var template:[String: Any] = [
+      "VpcId": vpcId, "VSwitchId": vSwitchId,
+      "PrivateIpAddress": privateIpAddress,
+      "NatIpAddress": natIpAddress]
+    return template.excludingNullStrings()
+  }
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{VpcAttributesType:: JSON Fault}"
+  }
+}
+
 public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
   public var id = ""
   public var name = ""
@@ -254,9 +312,9 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
   public var host = ""
   public var serial = ""
   public var status = ""
-  public var securityGroups: [SecurityGroup] = []
-  public var ipPublic = ""
-  public var ipPrivate = ""
+  public var securityGroupIds: [String] = []
+  public var ipPublic = IpAddressSetType()
+  public var ipPrivate = IpAddressSetType()
   public var maxBandwidthIn = 0
   public var maxBandwidthOut = 0
   public var creationTime = ""
@@ -268,6 +326,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
   public var ioOptimized = false
   public var expiration = ""
   public var keyPairName = ""
+  public var vpcAttributes = VpcAttributesType()
   public init() { }
 
   static public func == (l:Instance, r: Instance) -> Bool {
@@ -281,20 +340,20 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
     imageId = values["ImageId"] as? String ?? ""
     region = values["RegionId"] as? String ?? ""
     zone = values["ZoneId"] as? String ?? ""
-    cpu = values["CPU"] as? Int ?? 0
+    cpu = values["Cpu"] as? Int ?? 0
     memory = values["Memory"] as? Int ?? 0
     self.type = values["InstanceType"] as? String ?? ""
     typeFamily = values["InstanceTypeFamily"] as? String ?? ""
     host = values["HostName"] as? String ?? ""
     serial = values["SerialNumber"] as? String ?? ""
     status = values["Status"] as? String ?? ""
-    securityGroups = values["SecurityGroupIds"] as? [SecurityGroup] ?? []
-    ipPublic = (values["PublicIpAddress"] as? [String: String] ?? [:])["ipAddress"] ?? ""
+    securityGroupIds = (values["SecurityGroupIds"] as? [String: Any] ?? [:])["SecurityGroupId"] as? [String] ?? []
+    ipPublic.setJSONValues(values["PublicIpAddress"] as? [String: Any] ?? [:])
     maxBandwidthIn = values["InternetMaxBandwidthIn"] as? Int ?? 0
     maxBandwidthOut = values["InternetMaxBandwidthOut"] as? Int ?? 0
     chargeTypeInternet = ChargeTypeInternet(rawValue: values["InternetChargeType"] as? String ?? ChargeTypeInternet.PayByTraffic.rawValue) ?? ChargeTypeInternet.PayByTraffic
     creationTime = values["CreationTime"] as? String ?? ""
-    ipPrivate = (values["InnerIpAddress"] as? [String: String] ?? [:])["ipAddress"] ?? ""
+    ipPrivate.setJSONValues(values["InnerIpAddress"] as? [String: Any] ?? [:])
     networkType = values["InstanceNetworkType"] as? String ?? ""
     operationLocks = (values["OperationLocks"] as? [String: String] ?? [:])["LockReason"] ?? ""
     chargeTypeInstance = ChargeTypeInstance(rawValue: values["InstanceChargeType"] as? String ?? ChargeTypeInstance.PostPaid.rawValue) ?? ChargeTypeInstance.PostPaid
@@ -302,22 +361,24 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
     ioOptimized = (values["IoOptimized"] as? String ?? "False") == "True"
     expiration = values["ExpiredTime"] as? String ?? ""
     keyPairName = values["KeyPairName"] as? String ?? ""
+    vpcAttributes.setJSONValues(values["VpcAttributes"] as? [String: Any] ?? [:])
   }
 
   public func getJSONValues() -> [String: Any] {
     var template:[String: Any] = [
       "InstanceId": id, "InstanceName": name, "Description": remark, "ImageId": imageId,
-      "RegionId": region, "ZoneId": zone, "CPU": cpu, "Memory": memory, "InstanceType": self.type,
+      "RegionId": region, "ZoneId": zone, "Cpu": cpu, "Memory": memory, "InstanceType": self.type,
       "InstanceTypeFamily": typeFamily, "HostName": host, "SerialNumber": serial,
-      "Status": status, "SecurityGroupIds": securityGroups,
-      "PublicIpAddress": ["ipAddress": ipPublic],
+      "Status": status, "SecurityGroupIds": ["SecurityGroupId": securityGroupIds],
+      "PublicIpAddress": ipPublic.getJSONValues(),
       "InternetMaxBandwidthIn": maxBandwidthIn, "InternetMaxBandwidthOut": maxBandwidthOut,
       "InternetChargType": chargeTypeInternet.rawValue, "CreationTime": creationTime,
-      "InnerIpAddress":["ipAddress": ipPrivate], "InstanceNetworkType": networkType,
+      "InnerIpAddress":ipPrivate.getJSONValues(), "InstanceNetworkType": networkType,
       "InstanceChargeType": chargeTypeInstance.rawValue,
       "DeviceAvailable": (deviceAvailable ? "True" : "False"),
       "IoOptimized": (ioOptimized ? "True" : "False"),
-      "ExpiredTime": expiration, "KeyPairName": keyPairName
+      "ExpiredTime": expiration, "KeyPairName": keyPairName,
+      "VpcAttributes": vpcAttributes.getJSONValues()
     ]
 
     return template.excludingNullStrings()
