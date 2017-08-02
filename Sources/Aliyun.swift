@@ -166,7 +166,8 @@ public class AcsKeyPair: PerfectLib.JSONConvertible, CustomStringConvertible, Eq
   }
 
   public func getJSONValues() -> [String: Any] {
-    return ["KeyPairName": name, "KeyPairFingerPrint": fingerPrint, "PrivateKeyBody": key]
+    var temp =  ["KeyPairName": name, "KeyPairFingerPrint": fingerPrint, "PrivateKeyBody": key]
+    return temp.excludingNullStrings()
   }
 
   public func jsonEncodedString() throws -> String {
@@ -545,6 +546,24 @@ public class ECS: AcsRequest {
     }
   }
 
+  public func describeKeyPairs(region: String, _ completion: @escaping ([AcsKeyPair], String ) -> Void ) {
+    self.parameters = ["PageSize":"50"]
+    self.perform(product: self.product, action: "DescribeKeyPairs", regionId: region) {
+      json, msg in
+      if let a = json["KeyPairs"] as? [String: Any],
+        let b = a["KeyPair"] as? [Any] {
+        let kp = b.map { i -> AcsKeyPair in
+          let k = AcsKeyPair()
+          k.setJSONValues(i as? [String: Any] ?? [:])
+          return k
+        }
+        completion(kp, "")
+      } else {
+        completion([], msg)
+      }
+    }
+  }
+
   public func describeSecurityGroups(region: String, _ completion: @escaping ([SecurityGroup], String)->()) {
     self.parameters = ["PageSize":"50"]
     self.perform(product: self.product, action: "DescribeSecurityGroups", regionId: region) {
@@ -687,8 +706,3 @@ public class ECS: AcsRequest {
     }
   }
 }
-
-
-
-
-

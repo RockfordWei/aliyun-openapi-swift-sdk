@@ -140,6 +140,13 @@ class AliyunTests: XCTestCase {
     }
     let ecs = ECS(access: access)
     Sync().wait { sync in
+      ecs.describeKeyPairs(region: REGION) { keyPairs, msg in
+        print("============================== KEY PAIRS ========")
+        print(keyPairs)
+        sync.done()
+      }
+    }
+    Sync().wait { sync in
       ecs.deleteKeyPairs(region: REGION, keyNames: keys) { suc, msg in
         XCTAssertTrue(suc)
         XCTAssertTrue(msg.isEmpty)
