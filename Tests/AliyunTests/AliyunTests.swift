@@ -21,6 +21,7 @@ public class Sync {
 let access = AcsCredential()
 let passwd = "PASSWD".sysEnv
 let REGION = "cn-hongkong"
+let solo = true
 
 class AliyunTests: XCTestCase {
 
@@ -32,6 +33,7 @@ class AliyunTests: XCTestCase {
   }
 
   func testInstances() {
+    if solo { return }
     let ecs = ECS(access: access)
     var objectiveInstanceId: String? = nil
     let region = REGION
@@ -99,6 +101,7 @@ class AliyunTests: XCTestCase {
   }
 
   func testSecurityGroups() {
+    if solo { return }
     let ecs = ECS(access: access)
     Sync().wait { sync in
       ecs.describeSecurityGroups(region: REGION) { securityGroups, message in
@@ -110,7 +113,7 @@ class AliyunTests: XCTestCase {
   }
 
   func testRegions() {
-
+    if solo { return }
     let ecs = ECS(access: access)
     Sync().wait { sync in
       ecs.describeRegions { regions in
@@ -122,6 +125,7 @@ class AliyunTests: XCTestCase {
   }
 
   func testKeyPairs() {
+    if solo { return }
     let now = time(nil)
     let keys = (["pkey1", "pkey2"]).map { String(format: "\($0)%02x", now) }
     for k in keys {
@@ -156,11 +160,25 @@ class AliyunTests: XCTestCase {
   }
 
   func testInstanceTypes() {
+    if solo { return }
     let ecs = ECS(access: access)
     Sync().wait { sync in
       ecs.describeImageSupportInstanceTypes(region: REGION, imageId: "ubuntu_16_0402_64_40G_base_20170222.vhd") { types, msg in
         XCTAssertGreaterThan(types.count, 0)
         print(types)
+        sync.done()
+      }
+    }
+  }
+
+  func testElasticIP() {
+    // if solo { return }
+    let ecs = ECS(access: access)
+    Sync().wait { sync in
+      ecs.describeEipAddresses(region: REGION) { ips, msg in
+        XCTAssertTrue(msg.isEmpty)
+        XCTAssertGreaterThan(ips.count, 0)
+        print(ips)
         sync.done()
       }
     }
@@ -172,7 +190,8 @@ class AliyunTests: XCTestCase {
     ("testToSign", testToSign),
     ("testRegions", testRegions),
     ("testKeyPairs", testKeyPairs),
-    ("testInstanceTypes", testInstanceTypes)
+    ("testInstanceTypes", testInstanceTypes),
+    ("testElasticIP", testElasticIP)
     ]
 }
 

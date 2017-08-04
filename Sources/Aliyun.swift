@@ -299,6 +299,57 @@ public class VpcAttributesType: PerfectLib.JSONConvertible, CustomStringConverti
   }
 }
 
+public class EipAddressSetType: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable  {
+  public var regionId = ""
+  public var ipAddress = ""
+  public var allocationId = ""
+  public var status = ""
+  public var instanceType = ""
+  public var instanceId = ""
+  public var bandwidth = 0
+  public var internetChargeType = ""
+  public var operationLocks: [String] = []
+  public var allocationTime: String = ""
+
+  public init() {}
+
+  static public func == (lhs:EipAddressSetType, rhs: EipAddressSetType) -> Bool {
+    return lhs.ipAddress == rhs.ipAddress
+  }
+
+  public func setJSONValues( _ values: [String: Any]) {
+    regionId = values["RegionId"] as? String ?? ""
+    ipAddress = values["IpAddress"] as? String ?? ""
+    allocationId = values["AllocationId"] as? String ?? ""
+    status = values["Status"] as? String ?? ""
+    instanceType = values["InstanceType"] as? String ?? ""
+    instanceId = values["InstanceId"] as? String ?? ""
+    bandwidth = values["Bandwidth"] as? Int ?? 0
+    internetChargeType = values["InternetChargeType"] as? String ?? ""
+    operationLocks = (values["OperationLocks"] as? [String: Any] ?? [:])["LockReason"] as? [String] ?? []
+    allocationTime = values["AllocationTime"] as? String ?? ""
+  }
+
+  public func getJSONValues() -> [String: Any] {
+    var temp:[String:Any] = ["RegionId": regionId, "IpAddress": ipAddress,
+                "AllocationId": allocationId, "Status": status,
+                "InstanceType": instanceType, "InstanceId": instanceId,
+                "Bandwidth": bandwidth, "InternetChargeType": internetChargeType,
+                "OperationLocks": ["LockReason": operationLocks],
+                "AllocationTime": allocationTime]
+    return temp.excludingNullStrings()
+  }
+
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+
+  public var description: String {
+    return (try? self.jsonEncodedString()) ?? "{EipAddressSetType:: JSON Fault}"
+  }
+
+}
+
 public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
   public var id = ""
   public var name = ""
@@ -692,6 +743,24 @@ public class ECS: AcsRequest {
     self.parameters = ["InstanceId": instanceId]
     self.perform(product: self.product, action: "DeleteInstance") { _, msg in
       completion( !(msg.contains("Error") || msg.contains("Exception") || msg.contains("Invalid")), msg)
+    }
+  }
+
+  public func describeEipAddresses(region: String, completion: @escaping ([EipAddressSetType], String) -> Void) {
+    self.parameters = ["PageSize": "50"]
+    self.perform(product: self.product, action: "DescribeEipAddresses", regionId:  region) {
+      json, msg in
+      if let a = json["EipAddresses"] as? [String: Any] ,
+        let b = a["EipAddress"] as? [Any] {
+        let res = b.map { i -> EipAddressSetType in
+          let j = EipAddressSetType()
+          j.setJSONValues(i as? [String: Any] ?? [:])
+          return j
+        }
+        completion(res, "")
+      } else {
+        completion([], msg)
+      }
     }
   }
 
