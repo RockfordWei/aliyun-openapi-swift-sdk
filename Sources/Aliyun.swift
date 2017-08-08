@@ -22,18 +22,6 @@ import PerfectLib
 import PerfectCrypto
 import PerfectCURL
 
-public extension Dictionary {
-  public mutating func excludingNullStrings() -> Dictionary {
-    for index in self.indices {
-      let v = self[index]
-      if v.value is String, let s = v.value as? String, s.isEmpty {
-        self.remove(at: index)
-      }
-    }
-    return self
-  }
-}
-
 public extension Array {
   public var aliJSON : String {
     let joined = self.map { "\"\($0)\""  }.joined(separator: ",")
@@ -166,8 +154,7 @@ public class AcsKeyPair: PerfectLib.JSONConvertible, CustomStringConvertible, Eq
   }
 
   public func getJSONValues() -> [String: Any] {
-    var temp =  ["KeyPairName": name, "KeyPairFingerPrint": fingerPrint, "PrivateKeyBody": key]
-    return temp.excludingNullStrings()
+    return ["KeyPairName": name, "KeyPairFingerPrint": fingerPrint, "PrivateKeyBody": key]
   }
 
   public func jsonEncodedString() throws -> String {
@@ -203,11 +190,11 @@ public class SecurityGroup: PerfectLib.JSONConvertible, CustomStringConvertible,
   }
 
   public func getJSONValues() -> [String: Any] {
-    var template:[String: Any] =
+    let template:[String: Any] =
       ["CreationTime": creationTime, "Tags": tags, "SecurityGroupId": id,
        "SecurityGroupName": name, "Description": remark,
        "AvailableInstanceAmount": availableInstanceAmount, "VpcId": vpcId]
-    return template.excludingNullStrings()
+    return template
   }
 
   public func jsonEncodedString() throws -> String {
@@ -239,10 +226,10 @@ public class InstanceType: PerfectLib.JSONConvertible, CustomStringConvertible, 
   }
 
   public func getJSONValues() -> [String: Any] {
-    var temp:[String: Any] =
+    let temp:[String: Any] =
       ["InstanceTypeId": id, "CpuCoreCount": cpu,
        "MemorySize": memory, "InstanceTypeFamily": typeFamily]
-    return temp.excludingNullStrings()
+    return temp
   }
 
   public func jsonEncodedString() throws -> String {
@@ -284,11 +271,11 @@ public class VpcAttributesType: PerfectLib.JSONConvertible, CustomStringConverti
   }
 
   public func getJSONValues() -> [String: Any] {
-    var template:[String: Any] = [
+    let template:[String: Any] = [
       "VpcId": vpcId, "VSwitchId": vSwitchId,
       "PrivateIpAddress": privateIpAddress,
       "NatIpAddress": natIpAddress]
-    return template.excludingNullStrings()
+    return template
   }
   public func jsonEncodedString() throws -> String {
     return try self.getJSONValues().jsonEncodedString()
@@ -331,13 +318,13 @@ public class EipAddressSetType: PerfectLib.JSONConvertible, CustomStringConverti
   }
 
   public func getJSONValues() -> [String: Any] {
-    var temp:[String:Any] = ["RegionId": regionId, "IpAddress": ipAddress,
+    let temp:[String:Any] = ["RegionId": regionId, "IpAddress": ipAddress,
                 "AllocationId": allocationId, "Status": status,
                 "InstanceType": instanceType, "InstanceId": instanceId,
                 "Bandwidth": bandwidth, "InternetChargeType": internetChargeType,
                 "OperationLocks": ["LockReason": operationLocks],
                 "AllocationTime": allocationTime]
-    return temp.excludingNullStrings()
+    return temp
   }
 
   public func jsonEncodedString() throws -> String {
@@ -367,6 +354,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
   public var securityGroupIds: [String] = []
   public var ipPublic = IpAddressSetType()
   public var ipPrivate = IpAddressSetType()
+  public var eipAddress = EipAddressSetType()
   public var maxBandwidthIn = 0
   public var maxBandwidthOut = 0
   public var creationTime = ""
@@ -400,6 +388,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
     serial = values["SerialNumber"] as? String ?? ""
     status = values["Status"] as? String ?? ""
     securityGroupIds = (values["SecurityGroupIds"] as? [String: Any] ?? [:])["SecurityGroupId"] as? [String] ?? []
+    eipAddress.setJSONValues(values["EipAddress"] as? [String: Any] ?? [:])
     ipPublic.setJSONValues(values["PublicIpAddress"] as? [String: Any] ?? [:])
     maxBandwidthIn = values["InternetMaxBandwidthIn"] as? Int ?? 0
     maxBandwidthOut = values["InternetMaxBandwidthOut"] as? Int ?? 0
@@ -417,11 +406,12 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
   }
 
   public func getJSONValues() -> [String: Any] {
-    var template:[String: Any] = [
+    let template:[String: Any] = [
       "InstanceId": id, "InstanceName": name, "Description": remark, "ImageId": imageId,
       "RegionId": region, "ZoneId": zone, "Cpu": cpu, "Memory": memory, "InstanceType": self.type,
       "InstanceTypeFamily": typeFamily, "HostName": host, "SerialNumber": serial,
       "Status": status, "SecurityGroupIds": ["SecurityGroupId": securityGroupIds],
+      "EipAddress": eipAddress.getJSONValues(),
       "PublicIpAddress": ipPublic.getJSONValues(),
       "InternetMaxBandwidthIn": maxBandwidthIn, "InternetMaxBandwidthOut": maxBandwidthOut,
       "InternetChargType": chargeTypeInternet.rawValue, "CreationTime": creationTime,
@@ -433,7 +423,7 @@ public class Instance: PerfectLib.JSONConvertible, CustomStringConvertible, Equa
       "VpcAttributes": vpcAttributes.getJSONValues()
     ]
 
-    return template.excludingNullStrings()
+    return template
   }
 
 
@@ -761,6 +751,13 @@ public class ECS: AcsRequest {
       } else {
         completion([], msg)
       }
+    }
+  }
+
+  public func associateEipAddress(instanceId: String, eip: EipAddressSetType, completion: @escaping (Bool, String) -> Void ) {
+    self.parameters = ["AllocationId": eip.allocationId, "InstanceId": instanceId]
+    self.perform(product: self.product, action: "AssociateEipAddress") { json, msg in
+      completion(!msg.contains("Invalid"), msg)
     }
   }
 
