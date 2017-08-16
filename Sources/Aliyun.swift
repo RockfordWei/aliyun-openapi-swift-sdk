@@ -50,7 +50,7 @@ public extension String {
         let a = String(describing: char).unicodeScalars.first?.value ?? 0
         return String(format: "%%%02X", a)
       }
-    }.joined()
+      }.joined()
   }
   public var percentEncode: String {
     return self.urlEncoded
@@ -319,11 +319,11 @@ public class EipAddressSetType: PerfectLib.JSONConvertible, CustomStringConverti
 
   public func getJSONValues() -> [String: Any] {
     let temp:[String:Any] = ["RegionId": regionId, "IpAddress": ipAddress,
-                "AllocationId": allocationId, "Status": status,
-                "InstanceType": instanceType, "InstanceId": instanceId,
-                "Bandwidth": bandwidth, "InternetChargeType": internetChargeType,
-                "OperationLocks": ["LockReason": operationLocks],
-                "AllocationTime": allocationTime]
+                             "AllocationId": allocationId, "Status": status,
+                             "InstanceType": instanceType, "InstanceId": instanceId,
+                             "Bandwidth": bandwidth, "InternetChargeType": internetChargeType,
+                             "OperationLocks": ["LockReason": operationLocks],
+                             "AllocationTime": allocationTime]
     return temp
   }
 
@@ -464,7 +464,7 @@ public class AcsRequest {
       let k = key
       let v = queryParamters[key] ?? ""
       return k + "=" + v.percentEncode
-    }.joined(separator: "&")
+      }.joined(separator: "&")
     return method + "&" + "/".percentEncode + "&" + canonicalized.percentEncode
   }
   public static func Sign(_ stringToSign: String, keySecret: String) -> String {
@@ -518,7 +518,7 @@ public class AcsRequest {
         let k = key.urlEncoded
         let v = value.urlEncoded
         return "\(k)=\(v)"
-      }.joined(separator: "&")
+        }.joined(separator: "&")
     }
 
     if !regionId.isEmpty {
@@ -610,7 +610,7 @@ public class ECS: AcsRequest {
     self.perform(product: self.product, action: "DescribeSecurityGroups", regionId: region) {
       json, msg in
       if let a = json["SecurityGroups"] as? [String: Any],
-      let b = a["SecurityGroup"] as? [[String:Any]] {
+        let b = a["SecurityGroup"] as? [[String:Any]] {
         let groups = b.map { i -> SecurityGroup in
           let g = SecurityGroup()
           g.setJSONValues(i)
@@ -645,9 +645,9 @@ public class ECS: AcsRequest {
       json, msg in
       if let a = json["Instances"] as? [String: Any],
         let b = a["Instance"] as? [[String:Any]],
-      let totalCount = json ["TotalCount"] as? Int,
-      let pgSize = json["PageSize"] as? Int,
-      let pgNum = json["PageNumber"] as? Int {
+        let totalCount = json ["TotalCount"] as? Int,
+        let pgSize = json["PageSize"] as? Int,
+        let pgNum = json["PageNumber"] as? Int {
         let next  = totalCount > pgNum * pgSize ? pgNum + 1 : 0
         let newLoadedInstances = b.map { i -> Instance in
           let j = Instance()
@@ -699,8 +699,8 @@ public class ECS: AcsRequest {
     }
     var counter = 0
     for (k, v) in tags {
-    counter += 1
-    if counter > 5 { break }
+      counter += 1
+      if counter > 5 { break }
       self.parameters["Tag.\(counter).Key"] = k
       self.parameters["Tag.\(counter).Value"] = v
     }
@@ -757,6 +757,13 @@ public class ECS: AcsRequest {
   public func associateEipAddress(instanceId: String, eip: EipAddressSetType, completion: @escaping (Bool, String) -> Void ) {
     self.parameters = ["AllocationId": eip.allocationId, "InstanceId": instanceId]
     self.perform(product: self.product, action: "AssociateEipAddress") { json, msg in
+      completion(!msg.contains("Invalid"), msg)
+    }
+  }
+
+  public func unassociateEipAddress(instanceId: String, eip: EipAddressSetType, completion: @escaping( Bool, String) -> Void) {
+    self.parameters = ["AllocationId": eip.allocationId, "InstanceId": instanceId]
+    self.perform(product: self.product, action: "UnassociateEipAddress") { json, msg in
       completion(!msg.contains("Invalid"), msg)
     }
   }
