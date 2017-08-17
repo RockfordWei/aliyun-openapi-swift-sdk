@@ -768,6 +768,27 @@ public class ECS: AcsRequest {
     }
   }
 
+  public func allocateEipAddress(region: String, completion: @escaping (String?, String?, String) -> Void ) {
+    self.perform(product: self.product, action: "AllocateEipAddress", regionId: region) {
+      json, msg in
+      completion(json["AllocationId"] as? String, json["EipAddress"] as? String, msg)
+    }
+  }
+
+  public func releaseEipAddress(allocationId: String, completion: @escaping (Bool, String) -> Void) {
+    self.parameters = ["AllocationId": allocationId]
+    self.perform(product: self.product, action: "ReleaseEipAddress") { json, msg in
+      completion(!msg.contains("Invalid") && !msg.contains("Incorrect"), msg)
+    }
+  }
+
+  public func modifyEipAddressAttribute(allocationId: String, bandwidth: Int, completion: @escaping (Bool, String) -> Void) {
+    self.parameters = ["AllocationId": allocationId, "Bandwidth": "\(bandwidth)"]
+    self.perform(product: self.product, action: "ModifyEipAddressAttribute") { json, msg in
+      completion(!msg.contains("Invalid") && !msg.contains("Insufficient"), msg)
+    }
+  }
+
   public func allocateIP(instanceId: String, completion: @escaping (String?, String) -> Void) {
     self.parameters = ["InstanceId": instanceId]
     self.perform(product: self.product, action: "AllocatePublicIpAddress") { json, msg in
@@ -779,3 +800,4 @@ public class ECS: AcsRequest {
     }
   }
 }
+
