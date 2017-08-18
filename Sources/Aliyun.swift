@@ -207,6 +207,53 @@ public class SecurityGroup: PerfectLib.JSONConvertible, CustomStringConvertible,
 
 }
 
+public class PermissionType: PerfectLib.JSONConvertible {
+  public var ipProtocol = ""
+  public var portRange = ""
+  public var sourceCidrIp = ""
+  public var sourceGroupId = ""
+  public var sourceGroupOwnerAccount = ""
+  public var destCidrIp = ""
+  public var destGroupId = ""
+  public var destGroupOwnerAccount = ""
+  public var policy = ""
+  public var nicType = ""
+  public var priority = ""
+  public var direction = ""
+  public var description = ""
+  public var createTime = ""
+  public init () {}
+  public func setJSONValues(_ values: [String: Any]) {
+    ipProtocol = values["IpProtocol"] as? String ?? ""
+    portRange = values["PortRange"] as? String ?? ""
+    sourceCidrIp = values["SourceCidrIp"] as? String ?? ""
+    sourceGroupId = values["SourceGroupId"] as? String ?? ""
+    sourceGroupOwnerAccount = values["SourceGroupOwnerAccount"] as? String ?? ""
+    destCidrIp = values["DestCidrIp"] as? String ?? ""
+    destGroupId = values["DestGroupId"] as? String ?? ""
+    destGroupOwnerAccount = values["DestGroupOwnerAccount"] as? String ?? ""
+    policy = values["Policy"] as? String ?? ""
+    nicType = values["NicType"] as? String ?? ""
+    priority = values["Priority"] as? String ?? ""
+    direction = values["Direction"] as? String ?? ""
+    description = values["Description"] as? String ?? ""
+    createTime = values["CreateTime"] as? String ?? ""
+  }
+  public func getJSONValues() -> [String:Any] {
+    return ["IpProtocol": ipProtocol, "PortRange": portRange,
+            "SourceCidrIp": sourceCidrIp, "SourceGroupId": sourceGroupId,
+            "SourceGroupOwnerAccount": sourceGroupOwnerAccount,
+            "DestCidrIp": destCidrIp, "DestGroupId": destGroupId,
+            "DestGroupOwnerAccount": destGroupOwnerAccount,
+            "Policy": policy, "NicType": nicType,
+            "Priority": priority, "Direction": direction,
+            "Description": description, "CreateTime": createTime]
+  }
+  public func jsonEncodedString() throws -> String {
+    return try self.getJSONValues().jsonEncodedString()
+  }
+}
+
 public class InstanceType: PerfectLib.JSONConvertible, CustomStringConvertible, Equatable {
   public var id = ""
   public var cpu = 0
@@ -535,7 +582,7 @@ public class AcsRequest {
           print(resp.bodyString)
         }
         let json: [String: Any] = resp.bodyJSON
-        completion(json, "")
+        completion(json, resp.bodyString)
       }catch {
         completion([:], "\(error)")
       }
@@ -605,6 +652,20 @@ public class ECS: AcsRequest {
     }
   }
 
+  public func createSecurityGroup(region: String, name: String, description: String, _ completion: @escaping (String?, String) -> Void ) {
+    self.parameters = ["SecurityGroupName": name, "Description": description]
+    self.perform(product: self.product, action: "CreateSecurityGroup", regionId: region) { json, msg in
+      completion(json["SecurityGroupId"] as? String, msg)
+    }
+  }
+
+  public func deleteSecurityGroup(region: String, id: String, _ completion: @escaping (Bool, String) -> Void ) {
+    self.parameters = ["SecurityGroupId": id]
+    self.perform(product: self.product, action: "DeleteSecurityGroup", regionId: region) { json, msg in
+      completion(!msg.contains("Invalid") && !msg.contains("Violation"), msg)
+    }
+  }
+
   public func describeSecurityGroups(region: String, _ completion: @escaping ([SecurityGroup], String)->()) {
     self.parameters = ["PageSize":"50"]
     self.perform(product: self.product, action: "DescribeSecurityGroups", regionId: region) {
@@ -618,6 +679,56 @@ public class ECS: AcsRequest {
         }
         completion(groups, msg)
       }
+    }
+  }
+
+  public func describeSecurityGroupAttribute(region: String, securityGroupId: String, _ completion: @escaping ([PermissionType], String) -> Void ) {
+    self.parameters = ["SecurityGroupId": securityGroupId]
+    self.perform(product: self.product, action: "DescribeSecurityGroupAttribute", regionId: region) { json, msg in
+      if let a = json["Permissions"] as? [String:Any],
+        let b = a["Permission"] as? [[String:Any]] {
+        let groups = b.map { i -> PermissionType in
+          let g = PermissionType()
+          g.setJSONValues(i)
+          return g
+        }
+        completion(groups, msg)
+      }
+    }
+  }
+
+  public func authorizeSecurityGroup(region: String, securityGroupId: String, ipProtocol: String, portRange: String, directionInbound: Bool, ip:String, policy: String, priority: String, nicType: String, _ completion: @escaping (Bool, String) -> Void ) {
+    self.parameters = ["SecurityGroupId": securityGroupId, "IpProtocol": ipProtocol,
+                       "PortRange": portRange, "Policy": policy, "Priority": priority, "NicType": nicType]
+    let action:  String
+    if directionInbound {
+      self.parameters["SourceCidrIp"] = ip
+      action = "AuthorizeSecurityGroup"
+    } else {
+      action = "AuthorizeSecurityGroupEgress"
+      self.parameters["DestCidrIp"] = ip
+    }
+    self.perform(product: self.product, action: action, regionId:  region) {
+      json, msg in
+      completion(!msg.contains("Invalid") && !msg.contains("Missing"), msg)
+    }
+  }
+
+  public func revokeSecurityGroup(region: String, securityGroupId:String, permission: PermissionType, _ completion: @escaping (Bool, String) -> Void ) {
+    self.parameters = ["SecurityGroupId": securityGroupId,
+                       "IpProtocol": permission.ipProtocol,
+                       "PortRange": permission.portRange]
+    let action: String
+    if permission.direction == "ingress"{
+      action = "RevokeSecurityGroup"
+      self.parameters["SourceCidrIp"] = permission.sourceCidrIp
+    } else {
+      action = "RevokeSecurityGroupEgress"
+      self.parameters["DestCidrIp"] = permission.destCidrIp
+    }
+    self.perform(product: self.product, action: action, regionId:  region) {
+      json, msg in
+      completion(!msg.contains("Invalid") && !msg.contains("Missing"), msg)
     }
   }
 
@@ -705,8 +816,6 @@ public class ECS: AcsRequest {
       self.parameters["Tag.\(counter).Value"] = v
     }
     self.perform(product: self.product, action: "CreateInstance", regionId: region) { json, msg in
-      print(" ------- Return Message --------")
-      print(msg)
       if let id = json["InstanceId"] as? String {
         completion(id, msg)
       } else {
@@ -800,4 +909,3 @@ public class ECS: AcsRequest {
     }
   }
 }
-
