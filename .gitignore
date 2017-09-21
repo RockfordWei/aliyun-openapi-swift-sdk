@@ -1,8 +1,8 @@
 .DS_Store
 /Buil*
 /.buil*
-/Packages
 /*.xcodeproj
 /*.pins
+/*.resolved
 /*.orig
 /PA*

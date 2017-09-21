@@ -1,85 +1,66 @@
 import XCTest
 @testable import Aliyun
 
-public class Sync {
-  private var pending = true
-  public func done() { pending = false }
-
-  public func wait(_ timeout: Int = 5, _ action: @escaping (Sync) -> Void) {
-    action(self)
-    let now = time(nil)
-    var then = now
-    var shouldWait = true
-    repeat {
-      then = time(nil)
-      usleep(10000)
-      shouldWait = (then - now) < timeout
-    } while pending && shouldWait
-  }
-}
-
-let access = AcsCredential()
+var access = AcsCredential()
 let passwd = "PASSWD".sysEnv
 let REGION = "cn-hongkong"
 let solo = true
 
 class AliyunTests: XCTestCase {
-
-
   override func setUp() {
-    // AcsRequest.Debug = true
     access.key = "ACSKEY".sysEnv
     access.secret = "ACSPWD".sysEnv
   }
 
-  func testInstances() {
-    if solo { return }
+  func testKeyPairs() {
+    let now = time(nil)
+    let keys = (["pkey1", "pkey2"]).map { String(format: "\($0)%02x", now) }
     let ecs = ECS(access: access)
-    var objectiveInstanceId: String? = nil
-    let region = REGION
-    let tags = ["Perfect":"1"]
-    Sync().wait { sync in
-      ecs.createInstance(region: region, securityGroupId: "sg-j6c58xjb4po9jq2hsc0u", name: "PT-01", description: "PerfectTemplate Test Instance", keyPair: "TestKey", tags: tags) {
-        instanceId, msg in
-        objectiveInstanceId = instanceId
-        print("--------------- INSTANCE CREATION ----------------")
-        if let id = instanceId {
-          print(id)
+    let exps = keys.map { expectation(description: $0) }
+    for i in 0...1 {
+      let k = keys[i]
+      let exp = exps[i]
+      ecs.createKeyPair(region: REGION, name: k) { keyPair, msg in
+        if let kp = keyPair {
+          XCTAssertEqual(kp.KeyPairName, k)
+          print(kp)
+          exp.fulfill()
         } else {
           XCTFail(msg)
         }
-        sync.done()
       }
     }
-    sleep(5)
-    Sync().wait { sync in
-      ecs.loadInstances(region: region, tags: tags) { insts, msgs in
-        print("############ INSTANCE STATUS ###################")
-        XCTAssertGreaterThan(insts.count, 0)
-        print(insts)
-        sync.done()
-      }
+    wait(for: exps, timeout: 30)
+    var exp = expectation(description: "keyDescription")
+    ecs.describeKeyPairs(region: REGION) { keylist, message in
+      exp.fulfill()
+      XCTAssertGreaterThan(keylist.count, 1)
+      print(keylist)
     }
-    if let id = objectiveInstanceId{
-      Sync().wait { sync in
-        ecs.allocateIP(instanceId: id) { ipAddress, msg in
-          sync.done()
-          guard let ip = ipAddress else {
-            XCTFail(msg)
-            return
-          }
-          print("+++++++++++++++++ IP ADDRESS +++++++++++++++")
-          print("ssh -i ~/.ssh/TestKey.pem root@\(ip)")
-        }
-      }
-      Sync().wait { sync in
-        ecs.startInstance(instanceId: id) { success, message in
-          XCTAssertTrue(success)
-          print(message)
-          sync.done()
-        }
-      }
+    wait(for: [exp], timeout: 20)
+    exp = expectation(description: "keyDeletion")
+    ecs.deleteKeyPairs(region: REGION, keyNames: keys) { success, message in
+      XCTAssertTrue(success)
+      exp.fulfill()
     }
+    wait(for: [exp], timeout: 10)
+  }
+
+  func testRegions() {
+    let ecs = ECS(access: access)
+    let exp = expectation(description: "regions")
+    ecs.describeRegions { regions in
+      exp.fulfill()
+      XCTAssertGreaterThan(regions.count, 0)
+      print(regions)
+    }
+    wait(for: [exp], timeout: 10)
+  }
+  func testExample() {
+    let a:[Any] = [1, 2, 3, "four", "five"]
+    XCTAssertEqual(a.aliJSON, "[\"1\",\"2\",\"3\",\"four\",\"five\"]")
+    print("PATH".sysEnv)
+    XCTAssertEqual("HelloWorld".signSha1HMACToBase64("secret"), "+QF9FxJDiELqSr9zA5u5E9t04XU=")
   }
 
   func testSignature() {
@@ -100,104 +81,11 @@ class AliyunTests: XCTestCase {
     XCTAssertEqual(expected, q)
   }
 
-  func testSecurityGroups() {
-    if solo { return }
-    let ecs = ECS(access: access)
-    Sync().wait { sync in
-      ecs.describeSecurityGroups(region: REGION) { securityGroups, message in
-        sync.done()
-        XCTAssertGreaterThan(securityGroups.count, 0)
-        print(securityGroups)
-      }
-    }
-  }
-
-  func testRegions() {
-    if solo { return }
-    let ecs = ECS(access: access)
-    Sync().wait { sync in
-      ecs.describeRegions { regions in
-        sync.done()
-        XCTAssertGreaterThan(regions.count, 0)
-        print(regions)
-      }
-    }
-  }
-
-  func testKeyPairs() {
-    if solo { return }
-    let now = time(nil)
-    let keys = (["pkey1", "pkey2"]).map { String(format: "\($0)%02x", now) }
-    for k in keys {
-      Sync().wait { sync in
-        let ecs = ECS(access: access)
-        ecs.createKeyPair(region: REGION, name: k) { keyPair, msg in
-          if let kp = keyPair {
-            XCTAssertEqual(kp.name, k)
-            print(kp)
-          } else {
-            XCTFail(msg)
-          }
-          sync.done()
-        }
-      }
-    }
-    let ecs = ECS(access: access)
-    Sync().wait { sync in
-      ecs.describeKeyPairs(region: REGION) { keyPairs, msg in
-        print("============================== KEY PAIRS ========")
-        print(keyPairs)
-        sync.done()
-      }
-    }
-    Sync().wait { sync in
-      ecs.deleteKeyPairs(region: REGION, keyNames: keys) { suc, msg in
-        XCTAssertTrue(suc)
-        XCTAssertTrue(msg.isEmpty)
-        sync.done()
-      }
-    }
-  }
-
-  func testInstanceTypes() {
-    if solo { return }
-    let ecs = ECS(access: access)
-    Sync().wait { sync in
-      ecs.describeImageSupportInstanceTypes(region: REGION, imageId: "ubuntu_16_0402_64_40G_base_20170222.vhd") { types, msg in
-        XCTAssertGreaterThan(types.count, 0)
-        print(types)
-        sync.done()
-      }
-    }
-  }
-
-  func testElasticIP() {
-    // if solo { return }
-    let ecs = ECS(access: access)
-    Sync().wait { sync in
-      ecs.describeEipAddresses(region: REGION) { ips, msg in
-        XCTAssertTrue(msg.isEmpty)
-        XCTAssertGreaterThan(ips.count, 0)
-        print(ips)
-        sync.done()
-      }
-    }
-  }
-
   static var allTests = [
-    ("testInstances", testInstances),
+    ("testExample", testExample),
     ("testSignature", testSignature),
     ("testToSign", testToSign),
     ("testRegions", testRegions),
-    ("testKeyPairs", testKeyPairs),
-    ("testInstanceTypes", testInstanceTypes),
-    ("testElasticIP", testElasticIP)
+    ("testKeyPairs", testKeyPairs)
     ]
 }
-
-
-
-
-
-
-
