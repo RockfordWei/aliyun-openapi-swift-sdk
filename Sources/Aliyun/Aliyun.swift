@@ -107,11 +107,11 @@ public struct AcsKeyPair: Codable {
 
 public struct SecurityGroup: Codable {
   public var CreationTime = ""
-  public var Tags : [String] = []
+  public var Tags : [String:[String]] = [:]
   public var SecurityGroupId = ""
   public var SecurityGroupName = ""
   public var Description = ""
-  public var AvailableInstanceAmount = 0
+  public var AvailableInstanceAmount: Int? = nil
   public var VpcId = ""
 }
 
@@ -312,7 +312,7 @@ public class ECS:AcsRequest {
         completion([])
         return
       }
-      struct ResponseTypeRegions: Codable {
+      struct ResponseTypeRegions: Decodable {
         public var RequestId = ""
         public var Regions: [String:[Region]] = [:]
       }
@@ -376,8 +376,7 @@ public class ECS:AcsRequest {
         completion([], e.localizedDescription)
         return
       }
-      print(d.stringValue())
-      struct ResponseTypeAcsKeys: Codable {
+      struct ResponseTypeAcsKeys: Decodable {
         public var PageNumber = 0
         public var TotalCount = 0
         public var KeyPairs: [String:[AcsKeyPair]] = [:]
@@ -396,6 +395,80 @@ public class ECS:AcsRequest {
         completion([], error.localizedDescription)
       }
 
+    }
+  }
+
+  public func createSecurityGroup(region: String, name: String, description: String, _ completion: @escaping (String?, String) -> Void ) {
+    self.parameters = ["SecurityGroupName": name, "Description": description]
+    self.perform(product: self.product, action: "CreateSecurityGroup", regionId: region) { data, err in
+      guard let d = data else {
+        let e = err ?? Exception.unknown
+        completion(nil, e.localizedDescription)
+        return
+      }
+      struct ResponseTypeSecurityGroup: Decodable {
+        public var SecurityGroupId: String? = nil
+        public var RequestId = ""
+      }
+      let dec = JSONDecoder()
+      do {
+        let sec = try dec.decode(ResponseTypeSecurityGroup.self, from: d)
+        if let r = sec.SecurityGroupId {
+          completion(r, "")
+        } else {
+          completion(nil, d.stringValue())
+        }
+      }catch {
+        completion(nil, error.localizedDescription)
+      }
+
+    }
+  }
+
+  public func deleteSecurityGroup(region: String, id: String, _ completion: @escaping (Bool, String) -> Void ) {
+    self.parameters = ["SecurityGroupId": id]
+    self.perform(product: self.product, action: "DeleteSecurityGroup", regionId: region) {  data, err in
+      guard let d = data else {
+        let e = err ?? Exception.unknown
+        completion(false, e.localizedDescription)
+        return
+      }
+      let msg = d.stringValue()
+      if msg.contains("Error") || msg.contains("Invalid") {
+        completion(false, msg)
+      } else {
+        completion(true, "")
+      }
+    }
+  }
+
+  public func describeSecurityGroups(region: String, _ completion: @escaping ([SecurityGroup], String)->()) {
+    self.parameters = ["PageSize":"50"]
+    self.perform(product: self.product, action: "DescribeSecurityGroups", regionId: region) { data, err in
+      guard let d = data else {
+        let e = err ?? Exception.unknown
+        completion([], e.localizedDescription)
+        return
+      }
+      struct ResponseTypeSecurityGroups: Decodable {
+        public var TotalCount = 0
+        public var PageNumber = 0
+        public var PageSize = 0
+        public var RegionId = ""
+        public var SecurityGroups: [String:[SecurityGroup]] = [:]
+        public var RequestId = ""
+      }
+      let dec = JSONDecoder()
+      do {
+        let groups = try dec.decode(ResponseTypeSecurityGroups.self, from: d)
+        if let g = groups.SecurityGroups["SecurityGroup"] {
+          completion(g, "")
+        } else {
+          completion([], d.stringValue())
+        }
+      }catch {
+        completion([], error.localizedDescription)
+      }
     }
   }
 }

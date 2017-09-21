@@ -12,6 +12,29 @@ class AliyunTests: XCTestCase {
     access.secret = "ACSPWD".sysEnv
   }
 
+  func testSecurityGroup() {
+    let now = time(nil)
+    let groupName = "PerfectSecurityGroup.\(now)"
+    let ecs = ECS(access: access)
+    var exp = expectation(description: "securityGroupCreation")
+    ecs.createSecurityGroup(region: REGION, name: groupName, description: "testing") { id, message in
+      exp.fulfill()
+      XCTAssertTrue(message.isEmpty)
+    }
+    wait(for: [exp], timeout: 10)
+    exp = expectation(description: "securityGroupDescription")
+    ecs.describeSecurityGroups(region: REGION) { groups, message in
+      exp.fulfill()
+      XCTAssertGreaterThan(groups.count, 0)
+    }
+    wait(for: [exp], timeout: 10)
+    exp = expectation(description: "securityGroupDeletion")
+    ecs.deleteSecurityGroup(region: REGION, id: groupName) { success, message in
+      exp.fulfill()
+      XCTAssertTrue(success)
+    }
+    wait(for: [exp], timeout: 10)
+  }
   func testKeyPairs() {
     let now = time(nil)
     let keys = (["pkey1", "pkey2"]).map { String(format: "\($0)%02x", now) }
@@ -86,6 +109,7 @@ class AliyunTests: XCTestCase {
     ("testSignature", testSignature),
     ("testToSign", testToSign),
     ("testRegions", testRegions),
-    ("testKeyPairs", testKeyPairs)
+    ("testKeyPairs", testKeyPairs),
+    ("testSecurityGroup", testSecurityGroup)
     ]
 }
