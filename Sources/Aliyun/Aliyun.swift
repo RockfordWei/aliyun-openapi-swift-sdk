@@ -205,7 +205,7 @@ public struct Instance: Codable {
   public var HostName = ""
   public var SerialNumber = ""
   public var Status = ""
-  public var SecurityGroupIds: [String] = []
+  public var SecurityGroupIds: [String: [String]] = [:]
   public var EipAddress = EipAddressSetType()
   public var PublicIpAddress = IpAddressSetType()
   public var InternetMaxBandwidthIn = 0
@@ -305,7 +305,7 @@ public class AcsRequest{
   ///   - product: String, the product name. For ECS, it is "ecs".
   ///   - action: String, the action name.
   ///   - regionId: String, the region id.
-  ///   - verboseErrorCheck: Bool, default is false. If the returning result is not explicity required, set this variable to true. In such a case, callback(nil, nil) will indicate success, otherwise the error will be available.
+  ///   - verboseErrorCheck: Bool, default is false. If the returning result is not explicity required, set this variable to true. In such a case, callback(nil, nil) will indicate success, otherwise the error will be available. If the result is a CommonResponse type, then the value of this param must set to true.
   ///   - completion: callback with two parameters: (_ jsonStruct: Decodable?, _ e: Error?)
   ///     - JSON: json struct to parse back
   ///     - Error: exception on performing request or parsing json response.
@@ -463,7 +463,7 @@ public class ECS:AcsRequest {
       action = "AuthorizeSecurityGroupEgress"
       self.parameters["DestCidrIp"] = ip
     }
-    self.perform(product: self.product, action: action, regionId:  region) {
+    self.perform(product: self.product, action: action, regionId:  region, verboseErrorCheck: true) {
       (_: CommonResponse?, err) in
       completion(err)
     }
@@ -481,7 +481,7 @@ public class ECS:AcsRequest {
       action = "RevokeSecurityGroupEgress"
       self.parameters["DestCidrIp"] = permission.DestCidrIp
     }
-    self.perform(product: self.product, action: action, regionId:  region) {
+    self.perform(product: self.product, action: action, regionId:  region, verboseErrorCheck: true) {
       (_: CommonResponse?, err) in
       completion(err)
     }
@@ -492,6 +492,139 @@ public class ECS:AcsRequest {
     self.perform(product: self.product, action: "DescribeSecurityGroupAttribute", regionId: region) {
       (resp: SecurityGroupAttribute?, err) in
       completion(resp?.Permissions["Permission"] ?? [], err)
+    }
+  }
+
+  public func describeImageSupportInstanceTypes(region: String, imageId: String, _ completion: @escaping ([InstanceType], Error?) -> Void) {
+    struct ResponseType: Decodable {
+      public var InstanceTypes: [String:[InstanceType]] = [:]
+      public var RequestId = ""
+    }
+    self.parameters = ["ImageId": imageId]
+    self.perform(product: self.product, action: "DescribeImageSupportInstanceTypes", regionId: region) {
+      (resp: ResponseType?, err)  in
+      completion(resp?.InstanceTypes["InstanceType"] ?? [], err)
+    }
+  }
+
+  public func createInstance
+    (region: String, imageId: String = "ubuntu_16_0402_64_40G_base_20170222.vhd",
+     securityGroupId: String, instanceType: String = "ecs.n1.tiny",
+     name: String, description: String,
+     chargeTypeInternet: ChargeTypeInternet = .PayByTraffic,
+     chargeTypeInstance: ChargeTypeInstance = .PostPaid,
+     maxBandwidthIn: Int = 1, maxBandwidthOut: Int = 1,
+     keyPair: String, password: String? = nil,
+     tags: [String: String], completion: @escaping (String?, Error?) -> Void) {
+
+    self.parameters = [
+      "ImageId": imageId, "SecurityGroupId": securityGroupId,
+      "InstanceType": instanceType,
+      "InstanceName": name,
+      "Description": description,
+      "InternetChargeType": chargeTypeInternet.rawValue,
+      "InstanceChargeType": chargeTypeInstance.rawValue,
+      "InternetMaxBandwidthIn": "\(maxBandwidthIn)",
+      "InternetMaxBandwidthOut": "\(maxBandwidthOut)",
+      "KeyPairName": keyPair
+    ]
+    if let pwd = password {
+      self.parameters["Password"] = pwd
+    }
+    var counter = 0
+    for (k, v) in tags {
+      counter += 1
+      if counter > 5 { break }
+      self.parameters["Tag.\(counter).Key"] = k
+      self.parameters["Tag.\(counter).Value"] = v
+    }
+
+    struct ResponseType: Decodable {
+      public var InstanceId = ""
+      public var RequestId = ""
+    }
+    self.perform(product: self.product, action: "CreateInstance", regionId: region) {
+      (resp: ResponseType?, err) in
+      completion(resp?.InstanceId, err)
+    }
+  }
+
+  private func lookupInstancesBy(region: String, pageNumber: Int = 0, instances:[Instance] = [], err: Error? = nil, completion: @escaping ([Instance], Error?) -> Void ) {
+
+    struct ResponseType: Decodable {
+      public var TotalCount = 0
+      public var PageNumber = 0
+      public var PageSize = 0
+      public var Instances: [String: [Instance]] = [:]
+      public var RequestId = ""
+    }
+    self.parameters["PageNumber"] = "\(pageNumber)"
+    self.perform(product: self.product, action: "DescribeInstances", regionId:  region) {
+      (resp: ResponseType?, err) in
+
+      guard let r = resp else {
+        completion([], err)
+        return
+      }
+
+      let next = r.TotalCount > r.PageNumber * r.PageSize ? r.PageNumber + 1 : 0
+      var inst = instances
+      inst.append(contentsOf: r.Instances["Instance"] ?? [])
+      guard next > 0 else {
+        completion(inst, nil)
+        return
+      }
+      self.lookupInstancesBy(region: region, pageNumber: next, instances: inst, completion: completion)
+    }
+  }
+
+  public func loadInstances(region: String, tags: [String: String] = [:], completion: @escaping ([Instance], Error?) -> Void) {
+    var counter = 0
+    for (k, v) in tags {
+      counter += 1
+      if counter > 5 { break }
+      self.parameters["Tag\(counter)Key"] = k
+      self.parameters["Tag\(counter)Value"] = v
+    }
+    self.parameters["PageNumber"] = "1"
+    self.parameters["PageSize"] = "100"
+
+    self.lookupInstancesBy(region: region, pageNumber: 1, completion: completion)
+  }
+
+  public func startInstance(instanceId: String, completion: @escaping (Error?) -> Void) {
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "StartInstance", verboseErrorCheck: true) {
+      (_: CommonResponse?, err) in
+      completion(err)
+    }
+  }
+
+  public func stopInstance(instanceId: String, completion: @escaping (Error?) -> Void) {
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "StopInstance", verboseErrorCheck: true) {
+      (_: CommonResponse?, err) in
+      completion(err)
+    }
+  }
+
+  public func deleteInstance(instanceId: String, completion: @escaping (Error?) -> Void ) {
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "DeleteInstance", verboseErrorCheck: true) {
+      (_: CommonResponse?, err) in
+      completion(err)
+    }
+  }
+
+  public func allocateIP(instanceId: String, completion: @escaping (String?, Error?) -> Void) {
+    struct ResponseType: Decodable {
+      public var IpAddress = ""
+      public var RequestId = ""
+    }
+    self.parameters = ["InstanceId": instanceId]
+    self.perform(product: self.product, action: "AllocatePublicIpAddress") {
+      (resp: ResponseType?, err) in
+      completion(resp?.IpAddress, err)
     }
   }
 }

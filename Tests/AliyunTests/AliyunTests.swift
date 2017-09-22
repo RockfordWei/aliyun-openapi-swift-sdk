@@ -11,6 +11,19 @@ class AliyunTests: XCTestCase {
     access.key = "ACSKEY".sysEnv
     access.secret = "ACSPWD".sysEnv
   }
+
+  func testInstanceType() {
+    let exp = expectation(description: "instanceTypeChecking")
+    let ecs = ECS(access: access)
+    ecs.describeImageSupportInstanceTypes(region: REGION, imageId: "ubuntu_16_0402_64_40G_base_20170222.vhd") {
+      types, err in
+      exp.fulfill()
+      XCTAssertNil(err)
+      XCTAssertGreaterThan(types.count, 0)
+    }
+    wait(for: [exp], timeout: 10)
+  }
+
   func testSecurityGroup() {
     let now = time(nil)
     let groupName = "PerfectSecurityGroup.\(now)"
@@ -38,7 +51,7 @@ class AliyunTests: XCTestCase {
     }
     wait(for: [exp], timeout: 10)
     exp = expectation(description: "grantSecurityRule")
-    ecs.authorizeSecurityGroup(region: REGION, securityGroupId: newGroupId, ipProtocol: "TCP", portRange: "8080/8181", directionInbound: true, ip: "0.0.0.0/0", policy: "accept", priority: "1", nicType: "internet") {
+    ecs.authorizeSecurityGroup(region: REGION, securityGroupId: newGroupId, ipProtocol: "TCP", portRange: "22/22", directionInbound: true, ip: "0.0.0.0/0", policy: "accept", priority: "1", nicType: "internet") {
       err in
       XCTAssertNil(err)
       exp.fulfill()
@@ -50,7 +63,7 @@ class AliyunTests: XCTestCase {
       XCTAssertNil(err)
       XCTAssertGreaterThan(perm.count, 0)
       print(perm)
-      let filter = perm.filter { $0.IpProtocol == "TCP" && $0.PortRange == "8080/8181"}
+      let filter = perm.filter { $0.IpProtocol == "TCP" && $0.PortRange == "22/22"}
       XCTAssertGreaterThan(filter.count, 0)
       newRule = filter.first
       exp.fulfill()
@@ -146,6 +159,7 @@ class AliyunTests: XCTestCase {
     ("testToSign", testToSign),
     ("testRegions", testRegions),
     ("testKeyPairs", testKeyPairs),
-    //("testSecurityGroup", testSecurityGroup)
+    ("testSecurityGroup", testSecurityGroup),
+    ("testInstanceType", testInstanceType),
     ]
 }
