@@ -11,27 +11,28 @@ class AliyunTests: XCTestCase {
     access.key = "ACSKEY".sysEnv
     access.secret = "ACSPWD".sysEnv
   }
-
   func testSecurityGroup() {
     let now = time(nil)
     let groupName = "PerfectSecurityGroup.\(now)"
     let ecs = ECS(access: access)
     var exp = expectation(description: "securityGroupCreation")
-    ecs.createSecurityGroup(region: REGION, name: groupName, description: "testing") { id, message in
+    ecs.createSecurityGroup(region: REGION, name: groupName, description: "testing") { id, err in
       exp.fulfill()
-      XCTAssertTrue(message.isEmpty)
+      XCTAssertNotNil(id)
+      XCTAssertNil(err)
     }
     wait(for: [exp], timeout: 10)
     exp = expectation(description: "securityGroupDescription")
-    ecs.describeSecurityGroups(region: REGION) { groups, message in
+    ecs.describeSecurityGroups(region: REGION) { groups, err in
       exp.fulfill()
       XCTAssertGreaterThan(groups.count, 0)
+      XCTAssertNil(err)
     }
     wait(for: [exp], timeout: 10)
     exp = expectation(description: "securityGroupDeletion")
-    ecs.deleteSecurityGroup(region: REGION, id: groupName) { success, message in
+    ecs.deleteSecurityGroup(region: REGION, id: groupName) { err in
       exp.fulfill()
-      XCTAssertTrue(success)
+      XCTAssertNil(err)
     }
     wait(for: [exp], timeout: 10)
   }
@@ -43,13 +44,12 @@ class AliyunTests: XCTestCase {
     for i in 0...1 {
       let k = keys[i]
       let exp = exps[i]
-      ecs.createKeyPair(region: REGION, name: k) { keyPair, msg in
+      ecs.createKeyPair(region: REGION, name: k) { keyPair, err in
         if let kp = keyPair {
           XCTAssertEqual(kp.KeyPairName, k)
-          print(kp)
           exp.fulfill()
         } else {
-          XCTFail(msg)
+          XCTFail(err?.localizedDescription ?? "unknown")
         }
       }
     }
@@ -58,12 +58,11 @@ class AliyunTests: XCTestCase {
     ecs.describeKeyPairs(region: REGION) { keylist, message in
       exp.fulfill()
       XCTAssertGreaterThan(keylist.count, 1)
-      print(keylist)
     }
     wait(for: [exp], timeout: 20)
     exp = expectation(description: "keyDeletion")
-    ecs.deleteKeyPairs(region: REGION, keyNames: keys) { success, message in
-      XCTAssertTrue(success)
+    ecs.deleteKeyPairs(region: REGION, keyNames: keys) { err in
+      XCTAssertNil(err)
       exp.fulfill()
     }
     wait(for: [exp], timeout: 10)
@@ -72,10 +71,9 @@ class AliyunTests: XCTestCase {
   func testRegions() {
     let ecs = ECS(access: access)
     let exp = expectation(description: "regions")
-    ecs.describeRegions { regions in
+    ecs.describeRegions { regions, err in
       exp.fulfill()
       XCTAssertGreaterThan(regions.count, 0)
-      print(regions)
     }
     wait(for: [exp], timeout: 10)
   }
@@ -110,6 +108,6 @@ class AliyunTests: XCTestCase {
     ("testToSign", testToSign),
     ("testRegions", testRegions),
     ("testKeyPairs", testKeyPairs),
-    ("testSecurityGroup", testSecurityGroup)
+    //("testSecurityGroup", testSecurityGroup)
     ]
 }

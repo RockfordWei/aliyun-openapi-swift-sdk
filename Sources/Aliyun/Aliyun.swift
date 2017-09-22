@@ -82,7 +82,11 @@ public extension String {
 
 public enum Exception: Error {
   case invalidURL
-  case unknown
+  case unknown(raw: String)
+}
+
+public struct CommonResponse: Decodable {
+  public var RequestId = ""
 }
 
 public struct IpAddressSetType: Codable {
@@ -131,6 +135,18 @@ public struct PermissionType: Codable {
   public var Description = ""
   public var CreateTime = ""
 }
+
+public struct SecurityGroupAttribute: Codable {
+  public var SecurityGroupId = ""
+  public var SecurityGroupName = ""
+  public var RegionId = ""
+  public var Description = ""
+  public var InnerAccessPolicy = ""
+  public var Permissions: [String:[PermissionType]] = [:]
+  public var VpcId = ""
+  public var RequestId = ""
+}
+
 
 public struct InstanceType: Codable {
   public var InstanceTypeId = ""
@@ -205,7 +221,7 @@ public struct Instance: Codable {
   public var VpcAttributes = VpcAttributesType()
 }
 
-public class AcsRequest {
+public class AcsRequest{
   public var method = "GET"
   public let timeFormatter = DateFormatter()
   public var version = "2014-05-26"
@@ -219,6 +235,7 @@ public class AcsRequest {
   public var parameters:[String: String] = [:]
   public var nonce = ""
   public var debug = false
+  let jsonDecoder = JSONDecoder()
 
   public init(access: AcsCredential) {
     self.credential = access
@@ -271,8 +288,32 @@ public class AcsRequest {
     return self.protocol + "://" + product + "." + self.domain + "/?"
       + u.map { $0.key + "=" + $0.value }.joined(separator: "&")
   }
-  public func perform(product: String, action: String, regionId: String = "", completion: @escaping (Data?, Error?) -> Void) {
-    var url = self.generateURL(product: product, action: action, regionId: regionId) + "&Version=\(self.version)"
+
+  /// Perform a request by returning JSON type with an error if happends.
+  /// The JSON type can be any codable struct. To perform a request, declare
+  /// the json type in the callback function as a parameter.
+  /// For example, if an InstanceType is expected, then try
+  /// ```
+  ///   acs.perform(... ) {
+  ///     (json: InstanceType?, err) in
+  ///     ...
+  ///   }
+  /// ```
+  /// - parameters:
+  ///   - product: String, the product name. For ECS, it is "ecs".
+  ///   - action: String, the action name.
+  ///   - regionId: String, the region id.
+  ///   - verboseErrorCheck: Bool, default is false. If the returning result is not explicity required, set this variable to true. In such a case, callback(nil, nil) will indicate success, otherwise the error will be available.
+  ///   - completion: callback with two parameters: (_ jsonStruct: Decodable?, _ e: Error?)
+  ///     - JSON: json struct to parse back
+  ///     - Error: exception on performing request or parsing json response.
+  public func perform<JSON>
+    (product: String, action: String, regionId: String = "",
+     verboseErrorCheck : Bool = false,
+     completion: @escaping (JSON?, Error?) -> Void)
+    where JSON: Decodable {
+
+      var url = self.generateURL(product: product, action: action, regionId: regionId) + "&Version=\(self.version)"
 
     if parameters.count > 0 {
       url += "&" + parameters.map { key, value -> String in
@@ -296,7 +337,27 @@ public class AcsRequest {
     }
     let config = URLSessionConfiguration.default
     let session = URLSession(configuration: config)
-    let task = session.dataTask(with: u) { completion($0, $2) }
+    let task = session.dataTask(with: u) { data, code, err in
+      guard let d = data else {
+        completion(nil, err)
+        return
+      }
+      if verboseErrorCheck {
+        let msg = d.stringValue()
+        if msg.contains("Error") || msg.contains("Invalid") {
+          completion(nil, Exception.unknown(raw: msg))
+        } else {
+          completion(nil, nil)
+        }
+      } else {
+        do {
+          let json = try self.jsonDecoder.decode(JSON.self, from: d)
+          completion(json, nil)
+        } catch {
+          completion(nil, error)
+        }
+      }
+    }
     task.resume()
   }
 }
@@ -304,171 +365,128 @@ public class AcsRequest {
 public class ECS:AcsRequest {
   public let product = "ecs"
 
-  public func describeRegions(_ completion: @escaping ([Region]) -> Void ) {
-    self.perform(product: self.product, action: "DescribeRegions") { data, err in
-      guard let d = data else {
-        let e = err ?? Exception.unknown
-        print(e)
-        completion([])
-        return
-      }
-      struct ResponseTypeRegions: Decodable {
-        public var RequestId = ""
-        public var Regions: [String:[Region]] = [:]
-      }
+  public func describeRegions(_ completion: @escaping ([Region], Error?) -> Void ) {
+    struct ResponseTypeRegions: Decodable {
+      public var RequestId = ""
+      public var Regions: [String:[Region]] = [:]
+    }
 
-      let dec = JSONDecoder()
-      do {
-        let regions = try dec.decode(ResponseTypeRegions.self, from: d)
-        if let r = regions.Regions["Region"] {
-          completion(r)
-        } else {
-          print("Unexpected regions format:", d.stringValue())
-          completion([])
-        }
-      }catch {
-        print(error.localizedDescription)
-        completion([])
-      }
+    self.perform(product: self.product, action: "DescribeRegions") {
+      (resp: ResponseTypeRegions?, err) in
+      completion(resp?.Regions["Region"] ?? [], err)
     }
   }
 
-  public func createKeyPair(region: String, name: String, _ completion: @escaping (AcsKeyPair?, String) -> Void ) {
+  public func createKeyPair(region: String, name: String, _ completion: @escaping (AcsKeyPair?, Error?) -> Void ) {
     self.parameters = ["KeyPairName": name]
-    self.perform(product: self.product, action: "CreateKeyPair", regionId: region) { data, err in
-      guard let d = data else {
-        let e = err ?? Exception.unknown
-        completion(nil, e.localizedDescription)
-        return
-      }
-      let dec = JSONDecoder()
-      do {
-        let acs = try dec.decode(AcsKeyPair.self, from: d)
-        completion(acs, "")
-      }catch {
-        completion(nil, error.localizedDescription)
-      }
+    self.perform(product: self.product, action: "CreateKeyPair", regionId: region) {
+      (resp: AcsKeyPair?, err) in
+      completion(resp, err)
     }
   }
 
-  public func deleteKeyPairs(region: String, keyNames: [String], _ completion: @escaping (Bool, String) ->  Void) {
+  public func deleteKeyPairs(region: String, keyNames: [String], _ completion: @escaping (Error?) ->  Void) {
     self.parameters = ["KeyPairNames": keyNames.aliJSON]
-    self.perform(product: self.product, action: "DeleteKeyPairs", regionId: region) { data, err in
-      guard let d = data else {
-        let e = err ?? Exception.unknown
-        completion(false, e.localizedDescription)
-        return
-      }
-      let msg = d.stringValue()
-      if msg.contains("Error") || msg.contains("Invalid") {
-        completion(false, msg)
-      } else {
-        completion(true, "")
-      }
+    self.perform(product: self.product, action: "DeleteKeyPairs",
+                 regionId: region, verboseErrorCheck: true) {
+      (_ : CommonResponse?, err) in
+      completion(err)
     }
   }
 
-  public func describeKeyPairs(region: String, _ completion: @escaping ([AcsKeyPair], String ) -> Void ) {
+  public func describeKeyPairs(region: String, _ completion: @escaping ([AcsKeyPair], Error? ) -> Void ) {
     self.parameters = ["PageSize":"50"]
-    self.perform(product: self.product, action: "DescribeKeyPairs", regionId: region) { data, err in
-      guard let d = data else {
-        let e = err ?? Exception.unknown
-        completion([], e.localizedDescription)
-        return
-      }
-      struct ResponseTypeAcsKeys: Decodable {
-        public var PageNumber = 0
-        public var TotalCount = 0
-        public var KeyPairs: [String:[AcsKeyPair]] = [:]
-        public var PageSize = 0
-        public var RequestId = ""
-      }
-      let dec = JSONDecoder()
-      do {
-        let keys = try dec.decode(ResponseTypeAcsKeys.self, from: d)
-        if let r = keys.KeyPairs["KeyPair"] {
-          completion(r, "")
-        } else {
-          completion([], d.stringValue())
-        }
-      }catch {
-        completion([], error.localizedDescription)
-      }
-
+    struct ResponseTypeAcsKeys: Decodable {
+      public var PageNumber = 0
+      public var TotalCount = 0
+      public var KeyPairs: [String:[AcsKeyPair]] = [:]
+      public var PageSize = 0
+      public var RequestId = ""
+    }
+    self.perform(product: self.product, action: "DescribeKeyPairs",
+                 regionId: region) {
+      ( resp: ResponseTypeAcsKeys?, err) in
+      completion(resp?.KeyPairs["KeyPair"] ?? [], err)
     }
   }
 
-  public func createSecurityGroup(region: String, name: String, description: String, _ completion: @escaping (String?, String) -> Void ) {
+  public func createSecurityGroup(region: String, name: String, description: String, _ completion: @escaping (String?, Error?) -> Void ) {
     self.parameters = ["SecurityGroupName": name, "Description": description]
-    self.perform(product: self.product, action: "CreateSecurityGroup", regionId: region) { data, err in
-      guard let d = data else {
-        let e = err ?? Exception.unknown
-        completion(nil, e.localizedDescription)
-        return
-      }
-      struct ResponseTypeSecurityGroup: Decodable {
-        public var SecurityGroupId: String? = nil
-        public var RequestId = ""
-      }
-      let dec = JSONDecoder()
-      do {
-        let sec = try dec.decode(ResponseTypeSecurityGroup.self, from: d)
-        if let r = sec.SecurityGroupId {
-          completion(r, "")
-        } else {
-          completion(nil, d.stringValue())
-        }
-      }catch {
-        completion(nil, error.localizedDescription)
-      }
-
+    struct ResponseTypeSecurityGroup: Decodable {
+      public var SecurityGroupId: String? = nil
+      public var RequestId = ""
+    }
+    self.perform(product: self.product, action: "CreateSecurityGroup",
+                 regionId: region) {
+      (resp: ResponseTypeSecurityGroup?, err) in
+      completion(resp?.SecurityGroupId, err)
     }
   }
 
-  public func deleteSecurityGroup(region: String, id: String, _ completion: @escaping (Bool, String) -> Void ) {
+  public func deleteSecurityGroup(region: String, id: String, _ completion: @escaping (Error?) -> Void ) {
     self.parameters = ["SecurityGroupId": id]
-    self.perform(product: self.product, action: "DeleteSecurityGroup", regionId: region) {  data, err in
-      guard let d = data else {
-        let e = err ?? Exception.unknown
-        completion(false, e.localizedDescription)
-        return
-      }
-      let msg = d.stringValue()
-      if msg.contains("Error") || msg.contains("Invalid") {
-        completion(false, msg)
-      } else {
-        completion(true, "")
-      }
+    self.perform(product: self.product, action: "DeleteSecurityGroup",
+                 regionId: region, verboseErrorCheck: true) {
+      (_: CommonResponse?, err) in
+      completion(err)
     }
   }
 
-  public func describeSecurityGroups(region: String, _ completion: @escaping ([SecurityGroup], String)->()) {
+  public func describeSecurityGroups(region: String, _ completion: @escaping ([SecurityGroup], Error?)->()) {
     self.parameters = ["PageSize":"50"]
-    self.perform(product: self.product, action: "DescribeSecurityGroups", regionId: region) { data, err in
-      guard let d = data else {
-        let e = err ?? Exception.unknown
-        completion([], e.localizedDescription)
-        return
-      }
-      struct ResponseTypeSecurityGroups: Decodable {
-        public var TotalCount = 0
-        public var PageNumber = 0
-        public var PageSize = 0
-        public var RegionId = ""
-        public var SecurityGroups: [String:[SecurityGroup]] = [:]
-        public var RequestId = ""
-      }
-      let dec = JSONDecoder()
-      do {
-        let groups = try dec.decode(ResponseTypeSecurityGroups.self, from: d)
-        if let g = groups.SecurityGroups["SecurityGroup"] {
-          completion(g, "")
-        } else {
-          completion([], d.stringValue())
-        }
-      }catch {
-        completion([], error.localizedDescription)
-      }
+    struct ResponseTypeSecurityGroups: Decodable {
+      public var TotalCount = 0
+      public var PageNumber = 0
+      public var PageSize = 0
+      public var RegionId = ""
+      public var SecurityGroups: [String:[SecurityGroup]] = [:]
+      public var RequestId = ""
+    }
+    self.perform(product: self.product, action: "DescribeSecurityGroups", regionId: region) {
+      (resp: ResponseTypeSecurityGroups?, err) in
+      completion(resp?.SecurityGroups["SecurityGroup"] ?? [], err)
+    }
+  }
+  public func authorizeSecurityGroup(region: String, securityGroupId: String, ipProtocol: String, portRange: String, directionInbound: Bool, ip:String, policy: String, priority: String, nicType: String, _ completion: @escaping (Error?) -> Void ) {
+    self.parameters = ["SecurityGroupId": securityGroupId, "IpProtocol": ipProtocol,
+                       "PortRange": portRange, "Policy": policy, "Priority": priority, "NicType": nicType]
+    let action:  String
+    if directionInbound {
+      self.parameters["SourceCidrIp"] = ip
+      action = "AuthorizeSecurityGroup"
+    } else {
+      action = "AuthorizeSecurityGroupEgress"
+      self.parameters["DestCidrIp"] = ip
+    }
+    self.perform(product: self.product, action: action, regionId:  region) {
+      (_: CommonResponse?, err) in
+      completion(err)
+    }
+  }
+
+  public func revokeSecurityGroup(region: String, securityGroupId:String, permission: PermissionType, _ completion: @escaping (Error?) -> Void ) {
+    self.parameters = ["SecurityGroupId": securityGroupId,
+                       "IpProtocol": permission.IpProtocol,
+                       "PortRange": permission.PortRange]
+    let action: String
+    if permission.Direction == "ingress"{
+      action = "RevokeSecurityGroup"
+      self.parameters["SourceCidrIp"] = permission.SourceCidrIp
+    } else {
+      action = "RevokeSecurityGroupEgress"
+      self.parameters["DestCidrIp"] = permission.DestCidrIp
+    }
+    self.perform(product: self.product, action: action, regionId:  region) {
+      (_: CommonResponse?, err) in
+      completion(err)
+    }
+  }
+
+  public func describeSecurityGroupAttribute(region: String, securityGroupId: String, _ completion: @escaping ([PermissionType], Error?) -> Void ) {
+    self.parameters = ["SecurityGroupId": securityGroupId]
+    self.perform(product: self.product, action: "DescribeSecurityGroupAttribute", regionId: region) {
+      (resp: SecurityGroupAttribute?, err) in
+      completion(resp?.Permissions["Permission"] ?? [], err)
     }
   }
 }
