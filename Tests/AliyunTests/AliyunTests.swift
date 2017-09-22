@@ -15,20 +15,58 @@ class AliyunTests: XCTestCase {
     let now = time(nil)
     let groupName = "PerfectSecurityGroup.\(now)"
     let ecs = ECS(access: access)
+    var newGroupId = ""
     var exp = expectation(description: "securityGroupCreation")
     ecs.createSecurityGroup(region: REGION, name: groupName, description: "testing") { id, err in
       exp.fulfill()
       XCTAssertNotNil(id)
       XCTAssertNil(err)
+      newGroupId = id ?? ""
     }
     wait(for: [exp], timeout: 10)
+    XCTAssertFalse(newGroupId.isEmpty)
     exp = expectation(description: "securityGroupDescription")
     ecs.describeSecurityGroups(region: REGION) { groups, err in
       exp.fulfill()
       XCTAssertGreaterThan(groups.count, 0)
       XCTAssertNil(err)
+      guard let grp = (groups.first { $0.SecurityGroupName == groupName }),
+      grp.SecurityGroupId == newGroupId else {
+        XCTFail("new created group is not found")
+        return
+      }
     }
     wait(for: [exp], timeout: 10)
+    exp = expectation(description: "grantSecurityRule")
+    ecs.authorizeSecurityGroup(region: REGION, securityGroupId: newGroupId, ipProtocol: "TCP", portRange: "8080/8181", directionInbound: true, ip: "0.0.0.0/0", policy: "accept", priority: "1", nicType: "internet") {
+      err in
+      XCTAssertNil(err)
+      exp.fulfill()
+    }
+    wait(for: [exp], timeout: 10)
+    exp = expectation(description: "listSecurityRules")
+    var newRule: PermissionType? = nil
+    ecs.describeSecurityGroupAttribute(region: REGION, securityGroupId: newGroupId) { perm, err in
+      XCTAssertNil(err)
+      XCTAssertGreaterThan(perm.count, 0)
+      print(perm)
+      let filter = perm.filter { $0.IpProtocol == "TCP" && $0.PortRange == "8080/8181"}
+      XCTAssertGreaterThan(filter.count, 0)
+      newRule = filter.first
+      exp.fulfill()
+    }
+    wait(for: [exp], timeout: 10)
+    exp = expectation(description: "revokeSecurityRules")
+    guard let rule = newRule else {
+      XCTFail("new rule is not found")
+      return
+    }
+    ecs.revokeSecurityGroup(region: REGION, securityGroupId: newGroupId, permission: rule) { err in
+      XCTAssertNil(err)
+      exp.fulfill()
+    }
+    wait(for: [exp], timeout: 10)
+    ecs.debug = false
     exp = expectation(description: "securityGroupDeletion")
     ecs.deleteSecurityGroup(region: REGION, id: groupName) { err in
       exp.fulfill()

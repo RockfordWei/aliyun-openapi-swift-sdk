@@ -120,31 +120,33 @@ public struct SecurityGroup: Codable {
 }
 
 public struct PermissionType: Codable {
-  public var IpProtocol = ""
-  public var PortRange = ""
   public var SourceCidrIp = ""
-  public var SourceGroupId = ""
-  public var SourceGroupOwnerAccount = ""
   public var DestCidrIp = ""
-  public var DestGroupId = ""
-  public var DestGroupOwnerAccount = ""
-  public var Policy = ""
-  public var NicType = ""
-  public var Priority = ""
-  public var Direction = ""
   public var Description = ""
+  public var NicType = ""
+  public var DestGroupName = ""
+  public var PortRange = ""
+  public var DestGroupId = ""
+  public var Direction = ""
+  public var Priority = 0
+  public var IpProtocol = ""
+  public var SourceGroupOwnerAccount = ""
+  public var Policy = ""
   public var CreateTime = ""
+  public var SourceGroupId = ""
+  public var DestGroupOwnerAccount = ""
+  public var SourceGroupName = ""
 }
 
 public struct SecurityGroupAttribute: Codable {
   public var SecurityGroupId = ""
-  public var SecurityGroupName = ""
-  public var RegionId = ""
-  public var Description = ""
   public var InnerAccessPolicy = ""
+  public var SecurityGroupName = ""
+  public var Description = ""
+  public var RegionId = ""
+  public var RequestId = ""
   public var Permissions: [String:[PermissionType]] = [:]
   public var VpcId = ""
-  public var RequestId = ""
 }
 
 
@@ -341,6 +343,9 @@ public class AcsRequest{
       guard let d = data else {
         completion(nil, err)
         return
+      }
+      if self.debug {
+        print(d.stringValue())
       }
       if verboseErrorCheck {
         let msg = d.stringValue()
