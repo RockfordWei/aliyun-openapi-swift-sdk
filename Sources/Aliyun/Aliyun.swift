@@ -41,20 +41,44 @@ public extension String {
   }
 
   public var urlEncoded: String {
-    let lowers = Character("a")...Character("z")
-    let uppers = Character("A")...Character("Z")
-    let numbers = Character("0")...Character("9")
-    let remains = [Character("."), Character("-"), Character("*"), Character("_")]
-    return self.characters.map { char -> String in
-      if lowers.contains(char) || uppers.contains(char) || numbers.contains(char) || remains.contains(char) {
-        return String(describing: char)
-      } else if char == Character(" ") {
-        return "+"
-      } else {
-        let a = String(describing: char).unicodeScalars.first?.value ?? 0
-        return String(format: "%%%02X", a)
+    return self.withCString { pUTF8 -> String in
+      let nUTF8Len = strlen(pUTF8)
+      if nUTF8Len == 0 { return "" }
+      let size = 3 * nUTF8Len + 1
+      let pEncode = UnsafeMutablePointer<Int8>.allocate(capacity: size)
+      memset(pEncode, 0, size)
+      var index = 0
+      for i in 0 ..< nUTF8Len {
+        let c = pUTF8.advanced(by: i).pointee
+        if   (c >= 0x41 && c <= 0x5A) // A-Z
+          || (c >= 0x61 && c <= 0x7a) // a-z
+          || (c >= 0x30 && c <= 0x39) // 0-9
+          || c == 0x2D // -
+          || c == 0x2E // .
+          || c == 0x7E // ~
+          || c == 0x5F // _
+        {
+          pEncode.advanced(by: index).pointee = c
+          index += 1
+        } else if c == 0x20 // space
+        {
+          pEncode.advanced(by: index).pointee = 0x2B // +
+          index += 1
+        } else {
+          pEncode.advanced(by: index).pointee = 0x25 // %
+          let c4 = c >> 4
+          pEncode.advanced(by: index + 1).pointee
+            = 0xA0 <= c ? c4 + 0x37 : c4 + 0x30
+          let cf = 0x0F & c
+          pEncode.advanced(by: index + 2).pointee
+            = 0x0A <= cf ? cf + 0x37 : cf + 0x30
+          index += 3
+        }
       }
-      }.joined()
+      let ret = String(cString: pEncode)
+      pEncode.deallocate(capacity: size)
+      return ret
+    }
   }
   public var percentEncode: String {
     return self.urlEncoded
