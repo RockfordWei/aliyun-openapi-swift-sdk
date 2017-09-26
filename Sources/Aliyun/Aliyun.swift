@@ -33,6 +33,17 @@ public extension Data {
   }
 }
 
+public extension Character {
+    /// Get Unicode Int value
+    public var unicode: Int {
+        var unicode: Int = 0
+        for scalar in String(self).unicodeScalars {
+            unicode = Int(scalar.value)
+        }
+        return unicode
+    }
+}
+
 public extension String {
 
   public var sysEnv: String {
@@ -41,50 +52,53 @@ public extension String {
   }
 
   public var urlEncoded: String {
-    return self.withCString { pUTF8 -> String in
-      let nUTF8Len = strlen(pUTF8)
-      if nUTF8Len == 0 { return "" }
-      let size = 3 * nUTF8Len + 1
-      let pEncode = UnsafeMutablePointer<Int8>.allocate(capacity: size)
-      memset(pEncode, 0, size)
-      var index = 0
-      for i in 0 ..< nUTF8Len {
-        let c = pUTF8.advanced(by: i).pointee
-        if   (c >= 0x41 && c <= 0x5A) // A-Z
-          || (c >= 0x61 && c <= 0x7a) // a-z
-          || (c >= 0x30 && c <= 0x39) // 0-9
-          || c == 0x2D // -
-          || c == 0x2E // .
-          || c == 0x7E // ~
-          || c == 0x5F // _
-        {
-          pEncode.advanced(by: index).pointee = c
-          index += 1
-        } else if c == 0x20 // space
-        {
-          pEncode.advanced(by: index).pointee = 0x2B // +
-          index += 1
-        } else {
-          pEncode.advanced(by: index).pointee = 0x25 // %
-          let c4 = c >> 4
-          pEncode.advanced(by: index + 1).pointee
-            = 0xA0 <= c ? c4 + 0x37 : c4 + 0x30
-          let cf = 0x0F & c
-          pEncode.advanced(by: index + 2).pointee
-            = 0x0A <= cf ? cf + 0x37 : cf + 0x30
-          index += 3
+    let unreserved = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_.~"
+    var encode: String = ""
+    let _ = self.characters.map({ c in
+        if unreserved.contains(c) {
+            // Unreserved
+            encode.append(c)
         }
-      }
-      let ret = String(cString: pEncode)
-      pEncode.deallocate(capacity: size)
-      return ret
-    }
+        else {
+            let ch = c.unicode
+            var indexes: [Int]?
+            if ch <= 0x007F {
+                // The rest of ASCII
+                indexes = [ch]
+            }
+            else if ch <= 0x07FF {
+                // 0x007F < ch <= 0x07FF
+                indexes = [0xC0 | (ch >> 6), 0x80 | (ch & 0x3F)]
+            }
+            else if ch <= 0xFFFF {
+                // 0x07FF < ch <= 0xFFFF
+                indexes = [0xE0 | (ch >> 12), 0x80 | ((ch >> 6) & 0x3F), 0x80 | (ch & 0x3F)]
+            }
+            else if ch <= 0x1FFFFF {
+                // 0xFFFF < ch <= 0x1FFFFF
+                indexes = [0xF0 | (ch >> 18), 0x80 | ((ch >> 12) & 0x3F),
+                           0x80 | ((ch >> 6) & 0x3F), 0x80 | (ch & 0x3F)]
+            }
+            // Get encoding from (Hexadecimal Table)["%00", "%01", "%02"..."%FD", "%FE", "%FF"]
+            if let indexes = indexes {
+                for index in indexes {
+                    let row: Int = index / 8
+                    let column: Int = index % 8
+                    let left: Int = row / 2
+                    let right: Int = (row % 2 == 0) ? column : column + 8
+                    encode.append(String.init(format: "%%%X%X", left, right))
+                }
+            }
+            else {
+                // If encode unsuccessfully
+                encode.append(c)
+            }
+        }
+    })
+    return encode
   }
   public var percentEncode: String {
     return self.urlEncoded
-      .replacingOccurrences(of: "+", with: "%20")
-      .replacingOccurrences(of: "*", with: "%2A")
-      .replacingOccurrences(of: "%7E", with: "~")
   }
   public func signSha1HMACToBase64(_ secret: String) -> String {
     let str = self.cString(using: .utf8)
